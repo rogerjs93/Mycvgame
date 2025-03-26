@@ -84,7 +84,7 @@ function createSceneryObject(prefabName) {
 
 // Function to clear scene elements (called by generateUniverse)
 function clearCurrentUniverse(scene, worldObjectsRef) {
-    // Remove all objects EXCEPT camera and non-scene-specific lights maybe?
+    // Remove all objects EXCEPT camera and player mesh (if player is managed externally)
      const objectsToRemove = scene.children.filter(obj =>
         !(obj instanceof THREE.Camera) &&
         !(obj instanceof THREE.AudioListener) && // Don't remove listener attached to camera
@@ -206,9 +206,8 @@ export function generateUniverse(scene, worldObjectsRef, type) {
     // --- Ground / Platforms ---
     const universeRadius = type === 'main' ? Constants.MAIN_UNIVERSE_RADIUS : Constants.UNIVERSE_RADIUS;
 
-    // --- LOBBY TEXTURE FIX START ---
+    // --- LOBBY TEXTURE FIX ---
     let groundTextureName = biome.texturePaths?.ground; // Get biome-specific texture name
-    // Override for main universe
     if (type === 'main') {
         groundTextureName = 'tardis_floor'; // Explicitly set the name for main hub
     }
@@ -218,15 +217,19 @@ export function generateUniverse(scene, worldObjectsRef, type) {
     if (currentUniverseParams.isPlatformBased) {
         // TODO: Implement platform generation logic
         const platformGeo = new THREE.BoxGeometry(5, 1, 5);
-        const platformMat = new THREE.MeshStandardMaterial({ color: 0x888888, map: groundTexture }); // Apply texture if available
+        const platformMat = new THREE.MeshStandardMaterial({
+             color: groundTexture ? 0xffffff : 0x888888, // White if texture, gray otherwise
+             map: groundTexture
+         });
         const platform = new THREE.Mesh(platformGeo, platformMat);
         platform.position.set(0, 0, 0); platform.receiveShadow = true; platform.userData.isGround = true; platform.userData.boundingBox = new THREE.Box3().setFromObject(platform); scene.add(platform); worldObjectsRef.push(platform);
     } else {
         // Create standard cylindrical ground
         const groundGeo = new THREE.CylinderGeometry(universeRadius, universeRadius, 0.2, 32);
         const groundMat = new THREE.MeshStandardMaterial({
-            // Use specific color for main, otherwise biome color
-            color: type === 'main' ? new THREE.Color(0x8899AA) : (biome.groundColorRange ? getRandomColor(biome.groundColorRange[0], biome.groundColorRange[1]) : 0x888888),
+            // --- LOBBY TEXTURE COLOR FIX ---
+            color: groundTexture ? 0xffffff : (type === 'main' ? new THREE.Color(0x8899AA) : (biome.groundColorRange ? getRandomColor(biome.groundColorRange[0], biome.groundColorRange[1]) : 0x888888)),
+            // --- END COLOR FIX ---
             map: groundTexture, // Apply the potentially loaded texture
             metalness: type === 'main' ? 0.8 : Math.random() * 0.4,
             roughness: type === 'main' ? 0.4 : THREE.MathUtils.randFloat(0.5, 0.9)
@@ -289,8 +292,15 @@ export function generateUniverse(scene, worldObjectsRef, type) {
                     const groundY = findGroundHeight(sceneryMesh.position, worldObjectsRef);
                     if (groundY !== null) {
                         // Adjust based on geometry center (simple approximation)
-                        const heightOffset = sceneryMesh.geometry.boundingSphere ? sceneryMesh.geometry.boundingSphere.radius : 0.5;
-                        sceneryMesh.position.y = groundY + heightOffset * (sceneryMesh.position.y > 0 ? 1 : 0); // Place base near ground
+                        const geometry = sceneryMesh.geometry;
+                        let heightOffset = 0.5; // Default offset
+                        if (geometry) {
+                            if (!geometry.boundingBox) geometry.computeBoundingBox();
+                            if (geometry.boundingBox) {
+                                heightOffset = (geometry.boundingBox.max.y - geometry.boundingBox.min.y) / 2;
+                            }
+                        }
+                        sceneryMesh.position.y = groundY + heightOffset; // Place base near ground
                         sceneryMesh.userData.boundingBox.setFromObject(sceneryMesh); // Update bbox after Y adjust
                     }
                      scene.add(sceneryMesh);
@@ -317,41 +327,60 @@ export function generateUniverse(scene, worldObjectsRef, type) {
     // --- Spawn Portals ---
     activePortals = []; // Clear previous portals for this module's state
     if (type === 'main') {
-        const portalRnd = createPortalMesh(0x00ff00, 'random');
-        console.log("Created main universe portal:", portalRnd.uuid, "Type:", portalRnd.userData.type); // Log creation
-        portalRnd.position.set(0, Constants.PORTAL_HEIGHT / 2, -universeRadius + 1.5); // Fixed position
+        const portalRnd = createPortalMesh(0x00ff00, 'random'); // Green portal
+        console.log("Created main universe portal:", portalRnd.uuid, "Type:", portalRnd.userData.type);
+
+        // --- PORTAL Y DEBUG ---
+        const calculatedY = Constants.PORTAL_HEIGHT / 2;
+        console.log(`DEBUG: Using PORTAL_HEIGHT=${Constants.PORTAL_HEIGHT}, calculated Y=${calculatedY}`);
+        // --- END DEBUG ---
+
+        // Use the calculated Y, ensure it's a valid number or fallback
+        const finalY = typeof calculatedY === 'number' && !isNaN(calculatedY) ? calculatedY : 1.5; // Fallback Y
+        portalRnd.position.set(0, finalY, -universeRadius + 1.5); // Fixed position
+
         updatePortalBoundingBox(portalRnd); // Update bbox after moving
-        console.log("Positioned main portal at:", portalRnd.position.toArray().map(n=>n.toFixed(2))); // Log position array
+        console.log("Positioned main portal at:", portalRnd.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN'))); // Log formatted position
         scene.add(portalRnd);
         console.log("Added main portal to scene."); // Log adding
         activePortals.push(portalRnd);
         worldObjectsRef.push(portalRnd);
     } else {
         // Portal back to main
-        const portalMain = createPortalMesh(0xff0000, 'main');
-        console.log("Created random universe portal (to main):", portalMain.uuid, "Type:", portalMain.userData.type); // Log creation
+        const portalMain = createPortalMesh(0xff0000, 'main'); // Red portal
+        console.log("Created random universe portal (to main):", portalMain.uuid, "Type:", portalMain.userData.type);
         const mainY = Constants.PORTAL_HEIGHT / 2;
         placeObjectRandomly(portalMain, mainY, universeRadius * 0.9, worldObjectsRef, 2.0); // Wider check for portals
         // Add ground height check:
         const groundHMain = findGroundHeight(portalMain.position, worldObjectsRef);
-        if (groundHMain !== null) portalMain.position.y = groundHMain + Constants.PORTAL_HEIGHT / 2;
+        // Ensure groundHMain is valid before using it
+        if (groundHMain !== null && typeof groundHMain === 'number' && !isNaN(groundHMain)) {
+             portalMain.position.y = groundHMain + Constants.PORTAL_HEIGHT / 2;
+        } else {
+             portalMain.position.y = Constants.PORTAL_HEIGHT / 2; // Fallback Y if ground check fails
+        }
         updatePortalBoundingBox(portalMain);
-        console.log("Positioned portal (to main) at:", portalMain.position.toArray().map(n=>n.toFixed(2))); // Log position array
+        console.log("Positioned portal (to main) at:", portalMain.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN')));
         scene.add(portalMain);
-        console.log("Added portal (to main) to scene."); // Log adding
+        console.log("Added portal (to main) to scene.");
         activePortals.push(portalMain);
         worldObjectsRef.push(portalMain);
 
         // Portal to another random universe
-        const portalRnd = createPortalMesh(0x00ff00, 'random');
-        console.log("Created random universe portal (to random):", portalRnd.uuid, "Type:", portalRnd.type); // Log creation
+        const portalRnd = createPortalMesh(0x00ff00, 'random'); // Green portal
+        console.log("Created random universe portal (to random):", portalRnd.uuid, "Type:", portalRnd.userData.type);
         const rndY = Constants.PORTAL_HEIGHT / 2;
         let placementOk = false;
         let attempts = 0;
         while (!placementOk && attempts < Constants.MAX_PLACEMENT_ATTEMPTS) {
             placeObjectRandomly(portalRnd, rndY, universeRadius * 0.9, worldObjectsRef, 2.0);
              const groundHRnd = findGroundHeight(portalRnd.position, worldObjectsRef);
-             if (groundHRnd !== null) portalRnd.position.y = groundHRnd + Constants.PORTAL_HEIGHT / 2;
+              // Ensure groundHRnd is valid
+             if (groundHRnd !== null && typeof groundHRnd === 'number' && !isNaN(groundHRnd)) {
+                 portalRnd.position.y = groundHRnd + Constants.PORTAL_HEIGHT / 2;
+             } else {
+                 portalRnd.position.y = Constants.PORTAL_HEIGHT / 2; // Fallback Y
+             }
              updatePortalBoundingBox(portalRnd); // Update bbox *after* potential y adjustment
             // Check distance from other portal and ensure not inside something major
             if (portalRnd.position.distanceTo(portalMain.position) > Constants.PORTAL_WIDTH * 3 &&
@@ -361,9 +390,9 @@ export function generateUniverse(scene, worldObjectsRef, type) {
             attempts++;
         }
          if (!placementOk) console.warn("Could not place second portal safely!");
-        console.log("Positioned portal (to random) at:", portalRnd.position.toArray().map(n=>n.toFixed(2))); // Log final position array
+        console.log("Positioned portal (to random) at:", portalRnd.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN')));
         scene.add(portalRnd);
-        console.log("Added portal (to random) to scene."); // Log adding
+        console.log("Added portal (to random) to scene.");
         activePortals.push(portalRnd);
         worldObjectsRef.push(portalRnd);
     }
@@ -389,7 +418,7 @@ export function generateUniverse(scene, worldObjectsRef, type) {
         safeSpawnPos.z += (Math.random() - 0.5) * 1.0;
         // Optional: Raycast down from nudged pos to find ground and place slightly above
         const groundY = findGroundHeight(safeSpawnPos, worldObjectsRef);
-        if(groundY !== null) {
+        if(groundY !== null && typeof groundY === 'number' && !isNaN(groundY)) {
              safeSpawnPos.y = groundY + Constants.PLAYER_HEIGHT / 2 + 0.1;
         } else { // If raycast fails (maybe over void), use a fallback height
              safeSpawnPos.y = Constants.PLAYER_HEIGHT * 1.5;
