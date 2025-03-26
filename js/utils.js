@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as Constants from './constants.js';
 
@@ -113,4 +112,3 @@ export function updateScreenShake(camera, deltaTime) {
         // Optional: Smoothly return camera to base position if needed
     }
 }
-```
