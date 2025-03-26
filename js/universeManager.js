@@ -1,3 +1,4 @@
+      
 import * as THREE from 'three';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
@@ -84,7 +85,7 @@ function createSceneryObject(prefabName) {
 
 // Function to clear scene elements (called by generateUniverse)
 function clearCurrentUniverse(scene, worldObjectsRef) {
-    // Remove all objects EXCEPT camera and player mesh (if player is managed externally)
+    // Remove all objects EXCEPT camera and non-scene-specific lights maybe?
      const objectsToRemove = scene.children.filter(obj =>
         !(obj instanceof THREE.Camera) &&
         !(obj instanceof THREE.AudioListener) && // Don't remove listener attached to camera
@@ -205,43 +206,32 @@ export function generateUniverse(scene, worldObjectsRef, type) {
 
     // --- Ground / Platforms ---
     const universeRadius = type === 'main' ? Constants.MAIN_UNIVERSE_RADIUS : Constants.UNIVERSE_RADIUS;
-
-    // --- LOBBY TEXTURE FIX ---
-    let groundTextureName = biome.texturePaths?.ground; // Get biome-specific texture name
-    if (type === 'main') {
-        groundTextureName = 'tardis_floor'; // Explicitly set the name for main hub
-    }
-    const groundTexture = groundTextureName ? getTexture(groundTextureName) : null; // Load texture if name is set
-    // --- LOBBY TEXTURE FIX END ---
+    let groundTextureName = biome.texturePaths?.ground;
+    if (type === 'main') { groundTextureName = 'tardis_floor'; }
+    const groundTexture = groundTextureName ? getTexture(groundTextureName) : null;
 
     if (currentUniverseParams.isPlatformBased) {
         // TODO: Implement platform generation logic
         const platformGeo = new THREE.BoxGeometry(5, 1, 5);
         const platformMat = new THREE.MeshStandardMaterial({
-             color: groundTexture ? 0xffffff : 0x888888, // White if texture, gray otherwise
-             map: groundTexture
-         });
+             color: groundTexture ? 0xffffff : 0x888888, map: groundTexture });
         const platform = new THREE.Mesh(platformGeo, platformMat);
         platform.position.set(0, 0, 0); platform.receiveShadow = true; platform.userData.isGround = true; platform.userData.boundingBox = new THREE.Box3().setFromObject(platform); scene.add(platform); worldObjectsRef.push(platform);
     } else {
         // Create standard cylindrical ground
         const groundGeo = new THREE.CylinderGeometry(universeRadius, universeRadius, 0.2, 32);
         const groundMat = new THREE.MeshStandardMaterial({
-            // --- LOBBY TEXTURE COLOR FIX ---
             color: groundTexture ? 0xffffff : (type === 'main' ? new THREE.Color(0x8899AA) : (biome.groundColorRange ? getRandomColor(biome.groundColorRange[0], biome.groundColorRange[1]) : 0x888888)),
-            // --- END COLOR FIX ---
-            map: groundTexture, // Apply the potentially loaded texture
+            map: groundTexture,
             metalness: type === 'main' ? 0.8 : Math.random() * 0.4,
             roughness: type === 'main' ? 0.4 : THREE.MathUtils.randFloat(0.5, 0.9)
         });
-        // Adjust texture repeat
         if (groundTexture) {
-            groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping; // Ensure wrapping
-            const repeatVal = type === 'main' ? 4 : Math.max(2, Math.floor(universeRadius / 8)); // Ensure repeat is at least 2
+            groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
+            const repeatVal = type === 'main' ? 4 : Math.max(2, Math.floor(universeRadius / 8));
             groundTexture.repeat.set(repeatVal, repeatVal);
-            groundTexture.needsUpdate = true; // Flag update
+            groundTexture.needsUpdate = true;
         }
-
         const ground = new THREE.Mesh(groundGeo, groundMat);
         ground.position.y = -0.1; ground.receiveShadow = true; ground.userData.isGround = true;
         ground.userData.boundingBox = new THREE.Box3().setFromObject(ground);
@@ -249,122 +239,37 @@ export function generateUniverse(scene, worldObjectsRef, type) {
         worldObjectsRef.push(ground); // Add ground first
     }
 
-
-    // --- Scenery & Main Hub Console ---
-    if (type === 'main') {
-        // Create console (using geometry or loaded model)
-        const consoleModel = getModel('console'); // Attempt to get preloaded model
-        if (consoleModel) {
-             const consoleInstance = consoleModel.scene.clone(); // Clone scene from GLTF result
-             consoleInstance.position.y = 0; // Adjust position
-             consoleInstance.traverse(node => { if(node.isMesh) node.castShadow = true; });
-             scene.add(consoleInstance);
-             // Ensure userData is set for collision object before adding BBox
-             consoleInstance.userData = { isScenery: true };
-             const bbox = new THREE.Box3().setFromObject(consoleInstance);
-             consoleInstance.userData.boundingBox = bbox;
-             worldObjectsRef.push(consoleInstance);
-        } else {
-            console.warn("Console model not found, using procedural fallback.");
-            // Fallback to procedural geometry if model failed/not loaded
-            const consoleBaseGeo = new THREE.CylinderGeometry(1.5, 1.8, 1.0, 6); const consoleBaseMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.3 }); const consoleBase = new THREE.Mesh(consoleBaseGeo, consoleBaseMat); consoleBase.position.y = 0.5; consoleBase.castShadow = true; consoleBase.userData = {isScenery: true, boundingBox: new THREE.Box3().setFromObject(consoleBase)}; scene.add(consoleBase); worldObjectsRef.push(consoleBase);
-            const consoleTopGeo = new THREE.CylinderGeometry(1.0, 1.0, 0.5, 6); const consoleTopMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00aaaa, emissiveIntensity: 0.8 }); const consoleTop = new THREE.Mesh(consoleTopGeo, consoleTopMat); consoleTop.position.y = 1.25; consoleTop.userData = {isScenery: true, boundingBox: new THREE.Box3().setFromObject(consoleTop)}; scene.add(consoleTop); worldObjectsRef.push(consoleTop);
-        }
-    } else {
-        // Create Random Scenery based on biome
-        const numScenery = THREE.MathUtils.randInt(5, 15);
-        for (let i = 0; i < numScenery; i++) {
-            if (!biome.sceneryPrefabs || biome.sceneryPrefabs.length === 0) break;
-            const prefabName = biome.sceneryPrefabs[Math.floor(Math.random() * biome.sceneryPrefabs.length)];
-            const sceneryMesh = createSceneryObject(prefabName);
-            if (sceneryMesh) {
-                // Use prefab's default Y offset, but ensure it's placed on ground if possible
-                let yPos = sceneryMesh.position.y;
-                // Place randomly, checking against objects already added (ground, previous scenery)
-                const placedOk = placeObjectRandomly(
-                    sceneryMesh, yPos, universeRadius * 0.9,
-                    worldObjectsRef, // Pass current list for checking
-                    Constants.PLACEMENT_CLEARANCE_RADIUS_MULTIPLIER
-                );
-
-                // Optional: Raycast down to place on ground after finding X,Z
-                 if (placedOk) {
-                    const groundY = findGroundHeight(sceneryMesh.position, worldObjectsRef);
-                    if (groundY !== null) {
-                        // Adjust based on geometry center (simple approximation)
-                        const geometry = sceneryMesh.geometry;
-                        let heightOffset = 0.5; // Default offset
-                        if (geometry) {
-                            if (!geometry.boundingBox) geometry.computeBoundingBox();
-                            if (geometry.boundingBox) {
-                                heightOffset = (geometry.boundingBox.max.y - geometry.boundingBox.min.y) / 2;
-                            }
-                        }
-                        sceneryMesh.position.y = groundY + heightOffset; // Place base near ground
-                        sceneryMesh.userData.boundingBox.setFromObject(sceneryMesh); // Update bbox after Y adjust
-                    }
-                     scene.add(sceneryMesh);
-                     worldObjectsRef.push(sceneryMesh);
-                 }
-            }
-        }
-    }
-
-    // --- Spawn NPCs ---
-    if (type !== 'main' && biome.npcSpawnRules) {
-        // Spawn NPCs AFTER scenery is placed
-        spawnNPCs(scene, biome.npcSpawnRules, universeRadius, worldObjectsRef);
-        // spawnNPCs adds NPCs to worldObjectsRef internally
-    }
-
-    // --- Spawn Clues ---
-    if (type !== 'main') {
-        // Spawn Clues AFTER scenery and NPCs are placed
-        const clueMeshes = spawnClueObjects(scene, THREE.MathUtils.randInt(1, 3), universeRadius, worldObjectsRef);
-        clueMeshes.forEach(mesh => worldObjectsRef.push(mesh)); // Add spawned clues to world list
-    }
-
-    // --- Spawn Portals ---
-    activePortals = []; // Clear previous portals for this module's state
+    // --- Spawn Portals (BEFORE Scenery/NPCs/Clues) ---
+    activePortals = [];
     if (type === 'main') {
         const portalRnd = createPortalMesh(0x00ff00, 'random'); // Green portal
         console.log("Created main universe portal:", portalRnd.uuid, "Type:", portalRnd.userData.type);
-
-        // --- PORTAL Y DEBUG ---
         const calculatedY = Constants.PORTAL_HEIGHT / 2;
         console.log(`DEBUG: Using PORTAL_HEIGHT=${Constants.PORTAL_HEIGHT}, calculated Y=${calculatedY}`);
-        // --- END DEBUG ---
-
-        // Use the calculated Y, ensure it's a valid number or fallback
         const finalY = typeof calculatedY === 'number' && !isNaN(calculatedY) ? calculatedY : 1.5; // Fallback Y
         portalRnd.position.set(0, finalY, -universeRadius + 1.5); // Fixed position
-
         updatePortalBoundingBox(portalRnd); // Update bbox after moving
-        console.log("Positioned main portal at:", portalRnd.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN'))); // Log formatted position
+        console.log("Positioned main portal at:", portalRnd.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN')));
         scene.add(portalRnd);
-        console.log("Added main portal to scene."); // Log adding
+        console.log("Added main portal to scene.");
         activePortals.push(portalRnd);
-        worldObjectsRef.push(portalRnd);
+        worldObjectsRef.push(portalRnd); // Add portal to world objects for checks
     } else {
         // Portal back to main
         const portalMain = createPortalMesh(0xff0000, 'main'); // Red portal
         console.log("Created random universe portal (to main):", portalMain.uuid, "Type:", portalMain.userData.type);
         const mainY = Constants.PORTAL_HEIGHT / 2;
-        placeObjectRandomly(portalMain, mainY, universeRadius * 0.9, worldObjectsRef, 2.0); // Wider check for portals
-        // Add ground height check:
+        // Place FIRST portal, checking only against ground initially
+        placeObjectRandomly(portalMain, mainY, universeRadius * 0.9, worldObjectsRef, 2.5); // Increased clearance
         const groundHMain = findGroundHeight(portalMain.position, worldObjectsRef);
-        // Ensure groundHMain is valid before using it
         if (groundHMain !== null && typeof groundHMain === 'number' && !isNaN(groundHMain)) {
              portalMain.position.y = groundHMain + Constants.PORTAL_HEIGHT / 2;
-        } else {
-             portalMain.position.y = Constants.PORTAL_HEIGHT / 2; // Fallback Y if ground check fails
-        }
+        } else { portalMain.position.y = Constants.PORTAL_HEIGHT / 2; }
         updatePortalBoundingBox(portalMain);
         console.log("Positioned portal (to main) at:", portalMain.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN')));
         scene.add(portalMain);
-        console.log("Added portal (to main) to scene.");
         activePortals.push(portalMain);
-        worldObjectsRef.push(portalMain);
+        worldObjectsRef.push(portalMain); // Add portal to world objects
 
         // Portal to another random universe
         const portalRnd = createPortalMesh(0x00ff00, 'random'); // Green portal
@@ -373,18 +278,18 @@ export function generateUniverse(scene, worldObjectsRef, type) {
         let placementOk = false;
         let attempts = 0;
         while (!placementOk && attempts < Constants.MAX_PLACEMENT_ATTEMPTS) {
-            placeObjectRandomly(portalRnd, rndY, universeRadius * 0.9, worldObjectsRef, 2.0);
+             // Place SECOND portal, checking against ground AND the first portal
+            placeObjectRandomly(portalRnd, rndY, universeRadius * 0.9, worldObjectsRef, 2.5); // Increased clearance
              const groundHRnd = findGroundHeight(portalRnd.position, worldObjectsRef);
-              // Ensure groundHRnd is valid
              if (groundHRnd !== null && typeof groundHRnd === 'number' && !isNaN(groundHRnd)) {
                  portalRnd.position.y = groundHRnd + Constants.PORTAL_HEIGHT / 2;
-             } else {
-                 portalRnd.position.y = Constants.PORTAL_HEIGHT / 2; // Fallback Y
-             }
-             updatePortalBoundingBox(portalRnd); // Update bbox *after* potential y adjustment
-            // Check distance from other portal and ensure not inside something major
+             } else { portalRnd.position.y = Constants.PORTAL_HEIGHT / 2; }
+             updatePortalBoundingBox(portalRnd);
+            // Check distance from other portal and ensure clear area using stricter BOX check
             if (portalRnd.position.distanceTo(portalMain.position) > Constants.PORTAL_WIDTH * 3 &&
-                isSpawnAreaClear(portalRnd.position, Constants.PORTAL_WIDTH, worldObjectsRef, portalRnd)) {
+                 // Check using the BOX check function from utils
+                 isPlacementAreaClearBox(portalRnd.userData.boundingBox, worldObjectsRef, portalRnd) // Pass its own box
+                ) {
                 placementOk = true;
             }
             attempts++;
@@ -392,49 +297,106 @@ export function generateUniverse(scene, worldObjectsRef, type) {
          if (!placementOk) console.warn("Could not place second portal safely!");
         console.log("Positioned portal (to random) at:", portalRnd.position.toArray().map(n=>(typeof n === 'number' ? n.toFixed(2) : 'NaN')));
         scene.add(portalRnd);
-        console.log("Added portal (to random) to scene.");
         activePortals.push(portalRnd);
-        worldObjectsRef.push(portalRnd);
+        worldObjectsRef.push(portalRnd); // Add second portal to world objects
     }
 
-     // --- Mini Objective ---
+
+    // --- Scenery & Main Hub Console (AFTER Ground, AFTER Portals) ---
+    if (type === 'main') {
+        const consoleModel = getModel('console');
+        if (consoleModel) {
+             const consoleInstance = consoleModel.scene.clone();
+             consoleInstance.position.y = 0;
+             consoleInstance.traverse(node => { if(node.isMesh) node.castShadow = true; });
+             scene.add(consoleInstance);
+             consoleInstance.userData = { isScenery: true };
+             const bbox = new THREE.Box3().setFromObject(consoleInstance);
+             consoleInstance.userData.boundingBox = bbox;
+             worldObjectsRef.push(consoleInstance); // Add AFTER ground/portals
+        } else { /* ... procedural console fallback ... */
+            console.warn("Console model not found, using procedural fallback.");
+            const consoleBaseGeo = new THREE.CylinderGeometry(1.5, 1.8, 1.0, 6); const consoleBaseMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.3 }); const consoleBase = new THREE.Mesh(consoleBaseGeo, consoleBaseMat); consoleBase.position.y = 0.5; consoleBase.castShadow = true; consoleBase.userData = {isScenery: true, boundingBox: new THREE.Box3().setFromObject(consoleBase)}; scene.add(consoleBase); worldObjectsRef.push(consoleBase);
+            const consoleTopGeo = new THREE.CylinderGeometry(1.0, 1.0, 0.5, 6); const consoleTopMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00aaaa, emissiveIntensity: 0.8 }); const consoleTop = new THREE.Mesh(consoleTopGeo, consoleTopMat); consoleTop.position.y = 1.25; consoleTop.userData = {isScenery: true, boundingBox: new THREE.Box3().setFromObject(consoleTop)}; scene.add(consoleTop); worldObjectsRef.push(consoleTop);
+        }
+    } else {
+        // Create Random Scenery
+        const numScenery = THREE.MathUtils.randInt(5, 15);
+        for (let i = 0; i < numScenery; i++) {
+            if (!biome.sceneryPrefabs || biome.sceneryPrefabs.length === 0) break;
+            const prefabName = biome.sceneryPrefabs[Math.floor(Math.random() * biome.sceneryPrefabs.length)];
+            const sceneryMesh = createSceneryObject(prefabName);
+            if (sceneryMesh) {
+                let yPos = sceneryMesh.position.y;
+                // Place randomly, checking against ground AND portals
+                const placedOk = placeObjectRandomly(
+                    sceneryMesh, yPos, universeRadius * 0.9,
+                    worldObjectsRef, // Includes ground & portals now
+                    1.5 // Scenery clearance
+                );
+                if (placedOk) {
+                    const groundY = findGroundHeight(sceneryMesh.position, worldObjectsRef);
+                    if (groundY !== null && typeof groundY === 'number' && !isNaN(groundY)) {
+                        const geometry = sceneryMesh.geometry;
+                        let heightOffset = 0.5;
+                        if (geometry) {
+                            if (!geometry.boundingBox) geometry.computeBoundingBox();
+                            if (geometry.boundingBox) { heightOffset = (geometry.boundingBox.max.y - geometry.boundingBox.min.y) / 2; }
+                        }
+                        sceneryMesh.position.y = groundY + heightOffset;
+                        sceneryMesh.userData.boundingBox.setFromObject(sceneryMesh);
+                    }
+                    scene.add(sceneryMesh);
+                    worldObjectsRef.push(sceneryMesh); // Add scenery AFTER placing
+                }
+            }
+        }
+    }
+
+    // --- Spawn NPCs (AFTER Scenery) ---
+    if (type !== 'main' && biome.npcSpawnRules) {
+        spawnNPCs(scene, biome.npcSpawnRules, universeRadius, worldObjectsRef);
+    }
+
+    // --- Spawn Clues (AFTER NPCs & Scenery) ---
+    if (type !== 'main') {
+        const clueMeshes = spawnClueObjects(scene, THREE.MathUtils.randInt(1, 3), universeRadius, worldObjectsRef);
+        clueMeshes.forEach(mesh => worldObjectsRef.push(mesh));
+    }
+
+     // --- Mini Objective (AFTER everything else placed) ---
      let currentObjective = null;
      if (type !== 'main' && Math.random() < Constants.MINI_OBJECTIVE_CHANCE && biome.miniObjectiveConfig) {
          currentObjective = setupMiniObjective(scene, worldObjectsRef, biome.miniObjectiveConfig, universeRadius);
      }
-     UI.updateObjectiveDisplay(currentObjective); // Update UI
+     UI.updateObjectiveDisplay(currentObjective);
 
 
     // --- Player Spawn Position ---
-    let spawnPos = new THREE.Vector3(0, Constants.PLAYER_HEIGHT * 1.5, 0); // Default slightly higher
+    let spawnPos = new THREE.Vector3(0, Constants.PLAYER_HEIGHT * 1.5, 0);
     if (type === 'main') {
         spawnPos.set(0, Constants.PLAYER_HEIGHT / 2 + 0.1, universeRadius / 2);
     }
-    // Ensure spawn is clear
     let safeSpawnPos = spawnPos.clone();
     let spawnAttempts = 0;
+    // Use the stricter Box check for player spawn too? Or sphere is okay? Sphere is simpler.
     while (!isSpawnAreaClear(safeSpawnPos, Constants.PLAYER_SPAWN_CLEARANCE_RADIUS, worldObjectsRef) && spawnAttempts < Constants.MAX_PLACEMENT_ATTEMPTS) {
-        safeSpawnPos.x += (Math.random() - 0.5) * 1.0; // Nudge
+        safeSpawnPos.x += (Math.random() - 0.5) * 1.0;
         safeSpawnPos.z += (Math.random() - 0.5) * 1.0;
-        // Optional: Raycast down from nudged pos to find ground and place slightly above
         const groundY = findGroundHeight(safeSpawnPos, worldObjectsRef);
         if(groundY !== null && typeof groundY === 'number' && !isNaN(groundY)) {
              safeSpawnPos.y = groundY + Constants.PLAYER_HEIGHT / 2 + 0.1;
-        } else { // If raycast fails (maybe over void), use a fallback height
-             safeSpawnPos.y = Constants.PLAYER_HEIGHT * 1.5;
-        }
+        } else { safeSpawnPos.y = Constants.PLAYER_HEIGHT * 1.5; }
         spawnAttempts++;
     }
-    if (spawnAttempts >= Constants.MAX_PLACEMENT_ATTEMPTS) {
-         console.warn("Could not guarantee clear player spawn! Placing at last attempt.");
-    }
+    if (spawnAttempts >= Constants.MAX_PLACEMENT_ATTEMPTS) { console.warn("Could not guarantee clear player spawn! Placing at last attempt."); }
 
 
     console.log("Universe generation complete.");
     // Return parameters needed by the player and main loop
     return {
         safeSpawnPos: safeSpawnPos,
-        physicsParams: currentUniverseParams, // Contains gravity, friction, speed multipliers
+        physicsParams: currentUniverseParams,
         shouldRandomizeControls: type !== 'main' && Math.random() < currentUniverseParams.controlRandomChance,
         currentObjective: currentObjective
     };
@@ -442,12 +404,12 @@ export function generateUniverse(scene, worldObjectsRef, type) {
 
 
 function setupMiniObjective(scene, worldObjectsRef, config, universeRadius) {
-    if (!config || !config.possibleTypes || config.possibleTypes.length === 0) return null; // No objective config
+    if (!config || !config.possibleTypes || config.possibleTypes.length === 0) return null;
 
     const type = config.possibleTypes[Math.floor(Math.random() * config.possibleTypes.length)];
     let objective = null;
 
-    try { // Add try-catch around objective setup
+    try {
         switch (type) {
             case 'collect_shards':
                 const count = config.shardCount || 3;
@@ -456,17 +418,13 @@ function setupMiniObjective(scene, worldObjectsRef, config, universeRadius) {
                     const shardGeo = new THREE.TetrahedronGeometry(0.3);
                     const shardMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x55ffff, emissiveIntensity: 1.5 });
                     const shardMesh = new THREE.Mesh(shardGeo, shardMat);
-                     // Ensure userData exists before adding properties
-                    shardMesh.userData = {
-                        isObjectiveItem: true,
-                        objectiveType: 'collect_shards',
-                        boundingBox: new THREE.Box3().setFromObject(shardMesh)
-                     };
+                    shardMesh.userData = { isObjectiveItem: true, objectiveType: 'collect_shards', boundingBox: new THREE.Box3().setFromObject(shardMesh) };
                     const yPos = THREE.MathUtils.randFloat(0.8, 2.5);
+                    // Place checking against *all* previously placed objects
                     placeObjectRandomly(shardMesh, yPos, universeRadius * 0.9, worldObjectsRef, 1.0);
                     scene.add(shardMesh);
-                    worldObjectsRef.push(shardMesh);
-                    objective.items.push(shardMesh); // Keep track of item meshes if needed
+                    worldObjectsRef.push(shardMesh); // Add objective item to world list
+                    objective.items.push(shardMesh);
                 }
                 break;
             case 'reach_beacon':
@@ -475,28 +433,16 @@ function setupMiniObjective(scene, worldObjectsRef, config, universeRadius) {
                  const beaconGeo = new THREE.ConeGeometry(0.5, 2.0, 8);
                  const beaconMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff55, emissiveIntensity: 2.0 });
                  const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
-                  // Ensure userData exists before adding properties
-                 beaconMesh.userData = {
-                     isObjectiveItem: true,
-                     objectiveType: 'reach_beacon',
-                     boundingBox: new THREE.Box3().setFromObject(beaconMesh)
-                 };
-                 // Place beacon high up, potentially on scenery if possible
+                 beaconMesh.userData = { isObjectiveItem: true, objectiveType: 'reach_beacon', boundingBox: new THREE.Box3().setFromObject(beaconMesh) };
                  placeObjectRandomly(beaconMesh, beaconHeight, universeRadius * 0.7, worldObjectsRef, 1.5);
                  scene.add(beaconMesh);
-                 worldObjectsRef.push(beaconMesh);
+                 worldObjectsRef.push(beaconMesh); // Add objective item to world list
                  objective.items.push(beaconMesh);
                 break;
-             // Add 'activate_terminals' etc.
-            default:
-                console.warn("Unknown objective type in config:", type);
-                break;
+            default: console.warn("Unknown objective type in config:", type); break;
         }
         if(objective) console.log("Mini-objective created:", objective.type);
-    } catch (error) {
-        console.error("Error setting up mini objective:", error);
-        objective = null; // Ensure objective is null if setup fails
-    }
+    } catch (error) { console.error("Error setting up mini objective:", error); objective = null; }
     return objective;
 }
 
