@@ -30,7 +30,7 @@ const assetsToLoad = [
     // { type: 'model', name: 'crystal_large', path: Constants.MODEL_PATH + 'crystal_large.glb' },
 
     // Sounds (will be loaded as AudioBuffers)
-    { type: 'sound', name: 'teleport_random', path: Constants.SOUND_PATH + 'teleport_random.wav' },
+    { type: 'sound', name: 'teleport_random', path: Constants.SOUND_PATH + 'teleport_random.mp3' },
     { type: 'sound', name: 'teleport_main', path: Constants.SOUND_PATH + 'teleport_main.wav' },
     { type: 'sound', name: 'collect_clue', path: Constants.SOUND_PATH + 'collect_clue.wav' },
     { type: 'sound', name: 'jump', path: Constants.SOUND_PATH + 'jump.wav' },
