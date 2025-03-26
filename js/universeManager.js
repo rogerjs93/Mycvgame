@@ -174,7 +174,8 @@ export function generateUniverse(scene, worldObjectsRef, type) {
 
     // --- Ground / Platforms ---
     const universeRadius = type === 'main' ? Constants.MAIN_UNIVERSE_RADIUS : Constants.UNIVERSE_RADIUS;
-    const groundTexture = getTexture(biome.texturePaths?.ground) || null; // Load texture if specified
+    const groundTextureName = biome.texturePaths?.ground;
+    const groundTexture = groundTextureName ? getTexture(groundTextureName) : null; // Only call getTexture if name exists // Load texture if specified
     if (currentUniverseParams.isPlatformBased) {
         // TODO: Implement platform generation logic
         // Create several Mesh objects (boxes, cylinders) at varying heights/positions
