@@ -1,4 +1,3 @@
-```javascript
 import * as Constants from './constants.js';
 
 let clueDisplayTimeoutId = null;
@@ -114,4 +113,3 @@ export function showFadeOverlay(active) {
         if (currentOverlay) currentOverlay.classList.toggle('active', active);
      });
 }
-```
