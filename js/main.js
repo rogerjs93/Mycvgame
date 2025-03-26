@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as Constants from './constants.js';
 import { initScene, resizeRenderer } from './sceneSetup.js';
@@ -96,7 +95,8 @@ function switchUniverse(type) {
         UI.updateClueReviewPanel(getMasterClueList(), collectedClueIndices);
     } else {
         // Increment score only when entering a *new* random one
-        if (getCurrentUniverseType() === 'random') { // Check type *before* it's updated by generateUniverse? No, check the argument 'type'.
+        // Check the type argument to decide if it was a switch *to* random
+        if (type === 'random') {
              universeScore++;
         }
         // Handle control randomization
@@ -173,7 +173,12 @@ function handlePointerLockChange() {
 // --- Interaction Logic ---
 // Generic interaction handler
 function handleInteraction(objects, distance, callback) {
+    // Ensure player and objects are valid before proceeding
+    if (!player || !objects || objects.length === 0) return false;
+
     const playerPos = player.getPosition();
+    if (!playerPos) return false; // Player position might not be ready
+
     let closestDistSq = distance * distance; // Use squared distance for efficiency
     let targetObject = null;
     let targetIndex = -1; // Store index if needed for removal
@@ -182,7 +187,11 @@ function handleInteraction(objects, distance, callback) {
         const obj = objects[i];
         // Handle cases where obj is data wrapper vs direct mesh
         const mesh = obj.mesh || obj;
-        if (!mesh || !mesh.position) continue; // Skip invalid objects
+        if (!mesh || !mesh.position || !mesh.parent) {
+            // console.warn("Skipping invalid object in handleInteraction:", obj); // Added warning
+            continue; // Skip invalid/removed objects
+        }
+
 
         const distSq = playerPos.distanceToSquared(mesh.position);
         if (distSq < closestDistSq) {
@@ -193,20 +202,35 @@ function handleInteraction(objects, distance, callback) {
     }
 
     if (targetObject) {
-        callback(targetObject, targetIndex); // Pass object and index
-        return true; // Indicate interaction happened
+        try {
+             callback(targetObject, targetIndex); // Pass object and index
+             return true; // Indicate interaction happened
+        } catch (e) {
+            console.error("Error during interaction callback:", e, "Object:", targetObject);
+            return false;
+        }
     }
     return false; // No interaction
 }
 
 // Specific interaction callbacks
 function handlePortalUse(portalMesh) {
+    // Ensure userData exists before accessing type
+    if (!portalMesh || !portalMesh.userData) {
+        console.error("Invalid portal mesh data in handlePortalUse");
+        return;
+    }
     const portalType = portalMesh.userData.type;
     Audio.playPortalEnterSound(portalType);
     switchUniverse(portalType);
 }
 
 function handleClueCollect(clueMesh, index) {
+     // Ensure userData exists
+    if (!clueMesh || !clueMesh.userData || clueMesh.userData.originalIndex === undefined) {
+        console.error("Invalid clue mesh data in handleClueCollect");
+        return;
+    }
     const clueData = clueMesh.userData;
 
     // Add to collected list *if not already collected*
@@ -216,7 +240,13 @@ function handleClueCollect(clueMesh, index) {
         UI.updateScoreDisplay(universeScore, clueScore);
         // Update review panel if we are in the main hub (or defer update)
         if(getCurrentUniverseType() === 'main') {
-             UI.updateClueReviewPanel(getMasterClueList(), collectedClueIndices);
+             // Ensure list functions are available and valid before calling
+             const masterList = getMasterClueList();
+             if (masterList) {
+                 UI.updateClueReviewPanel(masterList, collectedClueIndices);
+             } else {
+                 console.error("Master clue list not available for UI update.");
+             }
         }
     }
 
@@ -229,13 +259,20 @@ function handleClueCollect(clueMesh, index) {
          Audio.playClueCollectSound();
     }
 
-    // Remove from scene and lists
-    scene.remove(clueMesh);
+    // Remove from scene and lists - Safely
+    if (clueMesh.parent) { // Check if it's still in the scene
+        scene.remove(clueMesh);
+    }
     worldObjects = worldObjects.filter(obj => obj !== clueMesh);
     removeActiveClueMesh(clueMesh); // Tell clue module it's gone
 }
 
 function handleNPCHint(npcData) {
+    // Ensure npcData and expected properties exist
+    if (!npcData || !npcData.behavior || !npcData.state) {
+        console.error("Invalid NPC data in handleNPCHint");
+        return false;
+    }
      if (npcData.behavior === 'hint' && npcData.state.hintText) {
          UI.displayTemporaryMessage(`NPC: "${npcData.state.hintText}"`, 4000); // Show hint longer
          // Audio.playSound('npc_talk'); // Optional talk sound
@@ -245,7 +282,7 @@ function handleNPCHint(npcData) {
 }
 
 function handleObjectiveItemInteract(itemMesh, index) {
-    if (!currentObjective || !itemMesh.userData.isObjectiveItem) return false;
+    if (!currentObjective || !itemMesh || !itemMesh.userData || !itemMesh.userData.isObjectiveItem) return false;
 
     // Check if item matches current objective type
     if (itemMesh.userData.objectiveType === currentObjective.type) {
@@ -254,8 +291,10 @@ function handleObjectiveItemInteract(itemMesh, index) {
         UI.updateObjectiveDisplay(currentObjective);
         Audio.playSound('collect_clue', 0.6); // Use clue sound for now
 
-        // Remove item from scene/lists
-        scene.remove(itemMesh);
+        // Remove item from scene/lists - Safely
+        if (itemMesh.parent) {
+            scene.remove(itemMesh);
+        }
         worldObjects = worldObjects.filter(obj => obj !== itemMesh);
         // Remove from objective's item list if needed
         currentObjective.items = currentObjective.items.filter(item => item !== itemMesh);
@@ -282,34 +321,67 @@ function handleObjectiveItemInteract(itemMesh, index) {
 
 // --- Animation Loop ---
 function animate() {
+    // Immediately request the next frame
     requestAnimationFrame(animate);
-    const deltaTime = Math.min(clock.getDelta(), 0.05); // Clamp delta time
 
-    // Update game objects
-    player.update(deltaTime, worldObjects); // Player update needs delta and collidable objects
-
-    const activeNPCsData = getActiveNPCsData();
-    if (activeNPCsData.length > 0) {
-        updateAllNPCs(deltaTime, worldObjects, player.getPosition()); // Update NPCs
+    // Safely get delta time, ensure clock exists
+    let deltaTime = 0;
+    if (clock) {
+        deltaTime = Math.min(clock.getDelta(), 0.05); // Clamp delta time
+    } else {
+        console.error("Clock not initialized!");
+        return; // Stop loop if clock is missing
     }
 
-    const activeClues = getActiveClueMeshes();
-    if (activeClues.length > 0) {
-        // Animate clues
-         activeClues.forEach(c => {
-             c.rotation.y += 0.8 * deltaTime;
-             // Bobbing effect - ensure clock is available or pass elapsed time
-             // c.position.y += Math.sin(clock.elapsedTime * 2.0 + c.id) * 0.005;
-         });
+
+    // Update game objects only if they exist
+    try {
+        if (player) {
+            player.update(deltaTime, worldObjects);
+        }
+
+        const activeNPCsData = getActiveNPCsData(); // Function should handle if list is empty
+        if (activeNPCsData && activeNPCsData.length > 0) {
+             updateAllNPCs(deltaTime, worldObjects, player ? player.getPosition() : null); // Pass player pos safely
+        }
+
+        const activeClues = getActiveClueMeshes(); // Function should handle if list is empty
+        if (activeClues && activeClues.length > 0) {
+            activeClues.forEach(c => {
+                if (c && c.rotation) { // Check clue object is valid
+                    c.rotation.y += 0.8 * deltaTime;
+                    // Bobbing effect - needs access to clock elapsed time, or manage time differently
+                    // c.position.y += Math.sin(clock.elapsedTime * 2.0 + c.id) * 0.005;
+                }
+            });
+        }
+
+        const activePortals = getActivePortals(); // Function should handle if list is empty
+        if (activePortals && activePortals.length > 0) {
+            updatePortals(activePortals, deltaTime);
+        }
+
+    } catch (error) {
+        console.error("Error during game update loop:", error);
+        // Potentially stop the loop or attempt recovery depending on the error
+        // For now, just log it to avoid crashing the browser entirely on minor update errors
+        // return; // Uncomment to stop loop on error
     }
 
-    const activePortals = getActivePortals();
-    if (activePortals.length > 0) {
-        updatePortals(activePortals, deltaTime); // Animate portals
-    }
 
-    // Render the scene
-    renderer.render(scene, camera);
+    // Render the scene only if renderer and scene exist
+    if (renderer && scene && camera) {
+        try {
+            renderer.render(scene, camera);
+        } catch (renderError) {
+            console.error("Error during rendering:", renderError);
+            // Stop the loop? Disable rendering?
+            // return; // Uncomment to stop loop on render error
+        }
+    } else {
+        console.error("Renderer, Scene, or Camera not initialized for rendering!");
+        // return; // Stop loop if core components are missing
+    }
 }
 
 // --- Start ---
@@ -317,15 +389,20 @@ function animate() {
 try {
      init().catch(err => {
         console.error("Initialization failed:", err);
-        UI.showLoading(false);
+        if(UI) UI.showLoading(false); // Ensure loading is hidden on error
         // Display error message to user?
-        document.getElementById('loadingIndicator').textContent = "Error during initialization. Please check console.";
-        document.getElementById('loadingIndicator').style.color = 'red';
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if(loadingIndicator) {
+             loadingIndicator.textContent = "Error during initialization. Please check console.";
+             loadingIndicator.style.color = 'red';
+        }
     });
 } catch (error) {
      console.error("Synchronous error during setup:", error);
-     UI.showLoading(false);
-     document.getElementById('loadingIndicator').textContent = "Critical error during setup. Please check console.";
-     document.getElementById('loadingIndicator').style.color = 'red';
+     if(UI) UI.showLoading(false);
+     const loadingIndicator = document.getElementById('loadingIndicator');
+     if(loadingIndicator) {
+        loadingIndicator.textContent = "Critical error during setup. Please check console.";
+        loadingIndicator.style.color = 'red';
+     }
 }
-```
