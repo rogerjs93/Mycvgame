@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import { shuffleArray, placeObjectRandomly, isSpawnAreaClear } from './utils.js';
 import * as Constants from './constants.js';
@@ -147,4 +146,3 @@ export function removeActiveClueMesh(meshToRemove) {
 export function getMasterClueList() {
     return masterClueList;
 }
-```
