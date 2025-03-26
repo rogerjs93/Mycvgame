@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as Constants from './constants.js';
 import { updatePortalBoundingBox } from './utils.js'; // Use utility for bbox
@@ -41,4 +40,3 @@ export function updatePortals(portals, deltaTime) {
          // portal.material.opacity = 0.6 + Math.sin(deltaTime * 5.0) * 0.1;
     });
 }
-```
