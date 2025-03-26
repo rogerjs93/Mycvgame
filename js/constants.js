@@ -1,4 +1,3 @@
-```javascript
 // Player
 export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_RADIUS = 0.4;
@@ -36,4 +35,3 @@ export const PLAYER_SPAWN_CLEARANCE_RADIUS = 1.5; // Radius to check around play
 export const PLACEMENT_CLEARANCE_RADIUS_MULTIPLIER = 1.2; // Check slightly larger area for object placement
 export const MAX_PLACEMENT_ATTEMPTS = 15;
 export const HARD_LANDING_VELOCITY_THRESHOLD = -12.0; // Y-velocity threshold for hard landing sound/effect
-```
