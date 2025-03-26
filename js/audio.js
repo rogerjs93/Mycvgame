@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import { getSoundBuffer } from './assetsLoader.js'; // Assuming assetsLoader handles loading
 
@@ -120,4 +119,3 @@ export function playPortalEnterSound(type = 'random') { playSound(type === 'main
 export function playErrorSound() { playSound('error', 0.4); } // Need an 'error.wav'
 export function playObjectiveCompleteSound() { playSound('objective_complete', 0.8); } // Need 'objective_complete.wav'
 // ... add more specific wrappers ...
-```
