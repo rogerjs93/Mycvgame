@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as Constants from './constants.js';
 import { shuffleArray, triggerScreenShake, updateScreenShake } from './utils.js';
 import * as Audio from './audio.js'; // Import audio for effects
+import { getCurrentUniverseType } from './universeManager.js'; // Import the function
 
 export class Player {
     constructor(scene, camera) {
