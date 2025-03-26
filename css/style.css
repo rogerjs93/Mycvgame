@@ -1,0 +1,140 @@
+```css
+body {
+    margin: 0;
+    overflow: hidden;
+    font-family: sans-serif;
+    background-color: #000;
+    color: white;
+}
+
+canvas {
+    display: block;
+}
+
+.ui-overlay {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    z-index: 100;
+    pointer-events: none;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+    transition: opacity 0.5s ease-in-out; /* For fade effects */
+}
+
+#loadingIndicator {
+    top: 45%;
+    font-size: 2em;
+    color: #ffcc00;
+    display: block; /* Show by default, JS will hide */
+}
+
+#info {
+    top: 10px;
+    font-size: 20px;
+}
+
+#objectiveDisplay {
+    top: 40px;
+    font-size: 16px;
+    color: #00ffff;
+    min-height: 20px; /* Reserve space */
+}
+
+#tempMessage {
+    top: 70px;
+    font-size: 18px;
+    color: #ffff00;
+    opacity: 0; /* Hidden by default */
+    transition: opacity 0.3s ease-out;
+}
+
+#clueDisplay {
+    bottom: 50%;
+    transform: translateY(50%);
+    left: 0;
+    font-size: 18px;
+    background-color: rgba(0, 0, 0, 0.75);
+    padding: 15px;
+    border-radius: 8px;
+    max-width: 80%;
+    margin: 0 auto;
+    display: none;
+    pointer-events: auto;
+    border: 1px solid #0ff;
+    z-index: 110;
+}
+
+#instructions {
+    bottom: 10px;
+    font-size: 15px;
+}
+
+#instructionsPanel,
+#clueReviewPanel {
+    position: absolute;
+    top: 15%;
+    left: 3%;
+    width: 25%;
+    max-width: 350px;
+    background-color: rgba(20, 30, 40, 0.9);
+    border: 1px solid #607D8B;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: left;
+    font-size: 14px;
+    display: none; /* Hidden by default */
+    z-index: 105;
+    pointer-events: auto;
+}
+
+#clueReviewPanel {
+    left: auto; /* Position on the right */
+    right: 3%;
+}
+
+
+#instructionsPanel h2, #clueReviewPanel h3 {
+    margin-top: 0;
+    color: #00ffff;
+    border-bottom: 1px solid #00ffff;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+#instructionsPanel p, #clueReviewPanel ul {
+    margin-bottom: 10px;
+}
+
+#instructionsPanel ul {
+    margin-left: 20px;
+    list-style: disc;
+}
+
+#clueReviewPanel ul {
+    list-style: none;
+    padding-left: 0;
+}
+#clueReviewPanel li {
+    margin-bottom: 5px;
+    color: #ccc;
+}
+#clueReviewPanel li span {
+    color: #fff;
+    font-weight: bold;
+}
+
+/* Simple Fade Overlay (optional) */
+#fadeOverlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: black;
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease-in-out;
+}
+#fadeOverlay.active {
+    opacity: 1;
+}
+```
