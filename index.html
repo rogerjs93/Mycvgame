@@ -1,0 +1,48 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CV Universe Hopper - Enhanced Playability</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- UI Elements -->
+    <div id="loadingIndicator" class="ui-overlay">Loading Assets...</div>
+    <div id="info" class="ui-overlay">Universes: 0 | CV Clues Found: 0</div>
+    <div id="objectiveDisplay" class="ui-overlay"></div>
+    <div id="tempMessage" class="ui-overlay"></div>
+    <div id="clueDisplay" class="ui-overlay"></div>
+    <div id="instructions" class="ui-overlay">Mouse: Look, Space: Jump, E: Interact, Enter: Use Portal</div>
+
+    <!-- Main Universe Specific Panels -->
+    <div id="instructionsPanel">
+        <h2>Welcome, Recruiter!</h2>
+        <p>Explore universes, collect CV clues (💎 - press E).</p>
+        <p>Portals: <span style="color:#0f0;">Green</span>=Random, <span style="color:#f00;">Red</span>=Back Here (press Enter).</p>
+        <p><strong>Heads Up:</strong> Movement controls (WASD) might change randomly in new universes!</p>
+        <p>Complete mini-objectives for potential rewards.</p>
+        <p><em>(Click screen to lock mouse)</em></p>
+    </div>
+    <div id="clueReviewPanel">
+        <h3>CV Clues Collected:</h3>
+        <ul id="clueReviewList">
+            <!-- List items will be added by JS -->
+        </ul>
+    </div>
+
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+            }
+        }
+    </script>
+    <!-- Main Game Script -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
+```
