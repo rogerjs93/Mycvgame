@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as Constants from './constants.js';
 
@@ -42,4 +41,3 @@ export function resizeRenderer(camera, renderer) {
 // export function getScene() { return scene; }
 // export function getCamera() { return camera; }
 // export function getRenderer() { return renderer; }
-```
