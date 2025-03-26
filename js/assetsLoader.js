@@ -26,7 +26,7 @@ const assetsToLoad = [
     { type: 'texture', name: 'grass_moss', path: Constants.TEXTURE_PATH + 'grass_moss.png' }, // Example
 
     // Models (use simple placeholders if no models yet)
-    // { type: 'model', name: 'console', path: Constants.MODEL_PATH + 'console.glb' },
+       { type: 'model', name: 'console', path: Constants.MODEL_PATH + 'console.glb' },
     // { type: 'model', name: 'crystal_large', path: Constants.MODEL_PATH + 'crystal_large.glb' },
 
     // Sounds (will be loaded as AudioBuffers)
