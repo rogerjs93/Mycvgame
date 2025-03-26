@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // import { FontLoader } from 'three/addons/loaders/FontLoader.js'; // If loading fonts for 3D text
@@ -106,4 +105,3 @@ export function getTexture(name) { return getAsset('textures', name); }
 export function getModel(name) { return getAsset('models', name); }
 export function getSoundBuffer(name) { return getAsset('sounds', name); }
 // export function getFont(name) { return getAsset('fonts', name); }
-```
