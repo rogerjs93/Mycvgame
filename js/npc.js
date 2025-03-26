@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import { placeObjectRandomly, isSpawnAreaClear } from './utils.js';
 import * as Constants from './constants.js';
@@ -271,4 +270,3 @@ function getRandomHint() {
 export function getActiveNPCsData() {
     return activeNPCs;
 }
-```
