@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as Constants from './constants.js';
 
@@ -86,4 +85,3 @@ export function getRandomBiomeKey() {
     if (keys.length === 0) return 'DEFAULT'; // Fallback
     return keys[Math.floor(Math.random() * keys.length)];
 }
-```
