@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as Constants from './constants.js';
 import { shuffleArray, triggerScreenShake, updateScreenShake } from './utils.js';
@@ -321,4 +320,3 @@ export class Player {
         return this.mesh.position;
     }
 }
-```
