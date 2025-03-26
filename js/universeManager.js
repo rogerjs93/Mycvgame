@@ -1,4 +1,3 @@
-```javascript
 import * as THREE from 'three';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
@@ -726,4 +725,3 @@ try {
      document.getElementById('loadingIndicator').textContent = "Critical error during setup. Please check console.";
      document.getElementById('loadingIndicator').style.color = 'red';
 }
-```
