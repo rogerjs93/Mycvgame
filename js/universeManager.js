@@ -4,7 +4,7 @@ import * as Audio from './audio.js';
 import { createPortalMesh } from './portal.js';
 import { spawnClueObjects, getActiveClueMeshes } from './clue.js';
 import { spawnNPCs, getActiveNPCsData } from './npc.js';
-import { getRandomColor, placeObjectRandomly, isSpawnAreaClear, findGroundHeight } from './utils.js';
+import { getRandomColor, placeObjectRandomly, isSpawnAreaClear, findGroundHeight, updatePortalBoundingBox } from './utils.js';
 import * as Constants from './constants.js';
 import { BIOMES, getRandomBiomeKey } from './biomes.js';
 import { getTexture, getModel } from './assetsLoader.js'; // Use asset loader
