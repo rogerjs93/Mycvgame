@@ -15,6 +15,8 @@ export class Player {
         this.mesh = new THREE.Mesh(playerGeo, playerMat);
         // Start position set by reset() or universeManager
         this.mesh.position.y = Constants.PLAYER_HEIGHT / 2 + 0.1;
+        // Tag player mesh if needed for filtering in universeManager clear logic
+        this.mesh.userData.isPlayerMesh = true;
         scene.add(this.mesh);
 
         // Physics state
@@ -43,12 +45,29 @@ export class Player {
     }
 
     reset(position) {
+        // Ensure position is valid before copying
+        if (!position || typeof position.x !== 'number' || typeof position.y !== 'number' || typeof position.z !== 'number') {
+             console.error("Invalid reset position provided:", position, "Using default fallback.");
+             position = new THREE.Vector3(0, Constants.PLAYER_HEIGHT / 2 + 0.1, 5); // Default safe fallback
+        }
+
         this.mesh.position.copy(position);
         this.velocity.set(0, 0, 0);
-        this.onGround = false; // Re-evaluate on first update
+        this.onGround = false;
         this.lastVelocityY = 0;
         this.updateCollider();
-        // Camera position updated in update() based on mesh position
+
+        // --- RESET CAMERA POSITION AND ORIENTATION ---
+        // Ensure camera exists before manipulating
+        if (this.camera) {
+            this.camera.position.set(position.x, position.y + (Constants.PLAYER_HEIGHT / 2) - Constants.PLAYER_RADIUS * 0.2, position.z); // Set initial camera pos too
+            this.camera.quaternion.identity(); // Reset rotation to default (looking down -Z if world is standard)
+            this.euler.set(0, 0, 0, 'YXZ'); // Reset euler angles
+        } else {
+            console.error("Camera not available during player reset.");
+        }
+        // --- END RESET ---
+
         console.log("Player state reset at position:", position);
     }
 
@@ -76,12 +95,12 @@ export class Player {
     }
 
     stabilizeControls() {
-         this.resetControls(); // For current universe only - called by external reward logic
+         this.resetControls();
          console.log("Player controls stabilized for this universe.");
-         // Maybe add a temporary UI message? (Handled externally via UI.displayTemporaryMessage)
     }
 
     handleMouseMove(event) {
+        if (!this.camera) return; // Safety check
         const movementX = event.movementX || 0;
         const movementY = event.movementY || 0;
         const PI_2 = Math.PI / 2;
@@ -104,13 +123,33 @@ export class Player {
     }
 
     setPhysicsParams(params) {
-        this.currentPhysics.gravity = Constants.BASE_GRAVITY * (params.gravityMultiplier || 1.0);
-        this.currentPhysics.friction = params.friction || Constants.DEFAULT_FRICTION;
-        this.currentPhysics.speedMultiplier = params.playerSpeedMultiplier || 1.0;
+        if (!params) {
+            console.warn("Attempted to set invalid physics params.");
+            params = {}; // Use empty object to avoid errors below
+        }
+        this.currentPhysics.gravity = Constants.BASE_GRAVITY * (params.gravityMultiplier ?? 1.0); // Use nullish coalescing for default
+        this.currentPhysics.friction = params.friction ?? Constants.DEFAULT_FRICTION;
+        this.currentPhysics.speedMultiplier = params.playerSpeedMultiplier ?? 1.0;
          console.log("Player physics updated:", this.currentPhysics);
     }
 
-    update(deltaTime, worldObjects) {
+    // --- Accept spawnPoint in signature ---
+    update(deltaTime, worldObjects, spawnPoint) {
+        // Safety check for camera
+        if (!this.camera) {
+            console.error("Player camera missing in update!");
+            return;
+        }
+
+        // --- AUTOMATIC RESPAWN CHECK ---
+        if (this.mesh.position.y < Constants.RESPAWN_Y_THRESHOLD) {
+            console.log(`Player fell below threshold (${Constants.RESPAWN_Y_THRESHOLD}). Respawning.`);
+            Audio.playRespawnSound(); // Play respawn sound
+            this.reset(spawnPoint); // Reset using the passed spawnPoint
+            return; // Stop further updates this frame after reset
+        }
+        // --- END RESPAWN CHECK ---
+
         const effectiveSpeed = Constants.PLAYER_BASE_SPEED * this.currentPhysics.speedMultiplier;
         let moveDirection = new THREE.Vector3(0, 0, 0);
         let inputVector = new THREE.Vector2(0, 0); // x = strafe, y = forward/backward
@@ -126,36 +165,40 @@ export class Player {
         this.camera.getWorldDirection(forward);
         forward.y = 0;
         forward.normalize();
-        const right = new THREE.Vector3().crossVectors(this.camera.up, forward).normalize();
+
+        // Calculate right vector relative to CAMERA's up and the flattened forward
+        const right = new THREE.Vector3();
+        right.crossVectors(this.camera.up, forward).normalize(); // camera.up is usually (0,1,0)
 
         // Apply input relative to camera
         if (inputVector.lengthSq() > 0) {
-            inputVector.normalize(); // Prevent faster diagonal movement if raw input used
+            inputVector.normalize(); // Prevent faster diagonal movement
             moveDirection.add(forward.multiplyScalar(inputVector.y));
             moveDirection.add(right.multiplyScalar(inputVector.x));
-            moveDirection.normalize(); // Ensure final move direction is normalized
+            // Normalize final move direction only if inputs were combined
+            if (inputVector.x !== 0 && inputVector.y !== 0) {
+                 moveDirection.normalize(); // Normalize if moving diagonally
+            }
         }
 
         // Apply movement intention to velocity
         let targetVelocityX = moveDirection.x * effectiveSpeed;
         let targetVelocityZ = moveDirection.z * effectiveSpeed;
 
+        const applyFriction = inputVector.lengthSq() === 0;
         if (this.onGround) {
-            // Apply friction if no input, otherwise move towards target velocity
-             if (inputVector.lengthSq() === 0) {
+            if (applyFriction) {
                  this.velocity.x *= this.currentPhysics.friction;
                  this.velocity.z *= this.currentPhysics.friction;
-             } else {
-                  // Smooth acceleration could be added here instead of direct set
-                  this.velocity.x = targetVelocityX;
-                  this.velocity.z = targetVelocityZ;
-             }
+            } else {
+                  this.velocity.x += (targetVelocityX - this.velocity.x) * 0.2; // Smoother acceleration
+                  this.velocity.z += (targetVelocityZ - this.velocity.z) * 0.2;
+            }
         } else {
-             // Allow some air control - interpolate towards target velocity?
-             this.velocity.x += (targetVelocityX - this.velocity.x) * 0.1; // Simple air control lerp
-             this.velocity.z += (targetVelocityZ - this.velocity.z) * 0.1;
+             // Air control
+             this.velocity.x += (targetVelocityX - this.velocity.x) * 0.03; // Less air control
+             this.velocity.z += (targetVelocityZ - this.velocity.z) * 0.03;
         }
-
 
         // Apply Gravity
         this.velocity.y += this.currentPhysics.gravity * deltaTime;
@@ -171,17 +214,13 @@ export class Player {
 
         // Update Ground State & Landing Effects
         if (!this.onGround && grounded) {
-             // Just landed
-             const impactVelocity = V_y_before_collision; // Use velocity before collision correction
-             console.log("Landed with velocity:", impactVelocity);
+             const impactVelocity = V_y_before_collision;
+             // console.log("Landed with velocity:", impactVelocity); // Reduce log spam
              const hardLanding = impactVelocity < Constants.HARD_LANDING_VELOCITY_THRESHOLD;
              Audio.playLandSound(hardLanding);
-             if (hardLanding) {
-                 triggerScreenShake(0.3, 0.08); // Trigger screen shake utility
-             }
+             if (hardLanding) { triggerScreenShake(0.3, 0.08); }
         }
         this.onGround = grounded;
-
 
         // Update Player Position based on corrected delta
         this.mesh.position.add(correctedDelta);
@@ -189,27 +228,32 @@ export class Player {
         // Update Collider after moving
         this.updateCollider();
 
-        // Boundary Collision (simple clamp or push back) - Handled by UniverseManager or here?
-        // Let's handle it here for simplicity, assuming circular random universes
-        const currentRadius = getCurrentUniverseType() === 'main' ? Constants.MAIN_UNIVERSE_RADIUS : Constants.UNIVERSE_RADIUS;
+        // Boundary Collision
+        let currentRadius = Constants.UNIVERSE_RADIUS; // Default to random
+        try { // Add try-catch around imported function call
+            if (getCurrentUniverseType() === 'main') {
+                currentRadius = Constants.MAIN_UNIVERSE_RADIUS;
+            }
+        } catch (e) {
+            console.error("Error calling getCurrentUniverseType in Player.update:", e);
+            // Use default radius if function fails
+        }
+
         const maxDist = currentRadius - Constants.PLAYER_RADIUS;
         const distFromCenterSq = this.mesh.position.x ** 2 + this.mesh.position.z ** 2;
         if (distFromCenterSq > maxDist ** 2) {
             const angle = Math.atan2(this.mesh.position.z, this.mesh.position.x);
             this.mesh.position.x = Math.cos(angle) * maxDist;
             this.mesh.position.z = Math.sin(angle) * maxDist;
-            // Dampen velocity component pushing outwards
             const outwardDir = new THREE.Vector3(this.mesh.position.x, 0, this.mesh.position.z).normalize();
             const outwardSpeed = this.velocity.dot(outwardDir);
-            if (outwardSpeed > 0) {
-                this.velocity.sub(outwardDir.multiplyScalar(outwardSpeed * 1.1)); // Push back slightly
-            }
-            this.updateCollider(); // Update collider after boundary correction
+            if (outwardSpeed > 0) { this.velocity.sub(outwardDir.multiplyScalar(outwardSpeed * 1.1)); }
+            this.updateCollider();
         }
 
-        // Update Camera Position to follow player's head (eye level)
+        // Update Camera Position
         this.camera.position.x = this.mesh.position.x;
-        this.camera.position.y = this.mesh.position.y + (Constants.PLAYER_HEIGHT / 2) - Constants.PLAYER_RADIUS * 0.2; // Adjust eye height slightly
+        this.camera.position.y = this.mesh.position.y + (Constants.PLAYER_HEIGHT / 2) - Constants.PLAYER_RADIUS * 0.2;
         this.camera.position.z = this.mesh.position.z;
 
         // Apply screen shake if active
@@ -221,12 +265,14 @@ export class Player {
         const originalDelta = deltaPosition.clone();
         let correctedDelta = deltaPosition.clone();
         let grounded = false;
+        const stepHeight = 0.2; // Allow stepping up small obstacles
 
         // Update collider to potential future position for checking
         const futureCollider = this.collider.clone().translate(deltaPosition);
 
+        // Sort world objects by distance? Might help collision resolution order. (Optional optimization)
+
         for (const obj of worldObjects) {
-            // Skip self, non-collidable, or objects without bounding boxes
             if (obj === this.mesh || !obj.userData.boundingBox || obj.userData.isNonCollidable) continue;
 
             const objectBox = obj.userData.boundingBox;
@@ -235,61 +281,72 @@ export class Player {
                 // --- Collision Response ---
 
                 // 1. Ground Collision
-                // Check if moving down AND colliding with ground specifically
-                if (originalDelta.y < 0 && obj.userData.isGround) {
-                    // Ground surface Y - use the top of the ground's bounding box
+                if (originalDelta.y <= 0 && obj.userData.isGround) {
                     const groundSurfaceY = objectBox.max.y;
-                    // Player's bottom position in the future state
                     const playerBottomFutureY = futureCollider.min.y;
 
                     if (playerBottomFutureY <= groundSurfaceY) {
-                        // Correct Y movement to land exactly on the ground surface
-                        // The amount to correct delta.y is the difference needed to align player bottom with ground top
-                        const correction = groundSurfaceY - playerBottomFutureY;
-                        correctedDelta.y += correction; // Adjust delta Y upwards
-
-                        this.velocity.y = 0; // Stop vertical velocity
-                        grounded = true;
-
-                        // Update future collider based on this correction for subsequent checks in this frame
-                        futureCollider.translate(new THREE.Vector3(0, correction, 0));
+                        // Check if it's just a small step up
+                        const groundClearance = groundSurfaceY - this.collider.min.y; // How far is ground below current feet?
+                        if(groundClearance <= stepHeight && groundClearance > -0.1) { // If slightly below or just above step height
+                             // Allow stepping up: Move player vertically to align with ground
+                             const stepUpCorrection = groundSurfaceY - this.collider.min.y;
+                              this.mesh.position.y += stepUpCorrection; // Snap player up immediately
+                              correctedDelta.y = 0; // Cancel intended downward delta for this frame
+                              this.velocity.y = 0; // Stop downward velocity
+                              grounded = true;
+                              // Update futureCollider's base position after snapping up
+                              futureCollider.copy(this.collider).translate(correctedDelta); // Recalculate based on new base + corrected delta
+                        } else {
+                            // Normal grounding collision
+                            const correction = groundSurfaceY - playerBottomFutureY;
+                            correctedDelta.y += correction;
+                            this.velocity.y = 0;
+                            grounded = true;
+                            futureCollider.translate(new THREE.Vector3(0, correction, 0));
+                        }
                     }
-                    // Don't do axis separation for ground, only handle Y correction.
-                    // Continue checking other objects, but we are now potentially grounded.
-                    continue; // Move to next object check
+                    continue; // Move to next object check after ground handled
                 }
 
                 // 2. Other Objects (Scenery, NPCs, Portals, Console) - AABB Separation
-                // Simple separation: Find minimum penetration axis and stop movement along it.
-                // Calculate overlap on each axis
                 const penetration = new THREE.Vector3();
-                penetration.x = (this.collider.max.x - this.collider.min.x) / 2 + (objectBox.max.x - objectBox.min.x) / 2 - Math.abs(futureCollider.getCenter(new THREE.Vector3()).x - objectBox.getCenter(new THREE.Vector3()).x);
-                penetration.y = (this.collider.max.y - this.collider.min.y) / 2 + (objectBox.max.y - objectBox.min.y) / 2 - Math.abs(futureCollider.getCenter(new THREE.Vector3()).y - objectBox.getCenter(new THREE.Vector3()).y);
-                penetration.z = (this.collider.max.z - this.collider.min.z) / 2 + (objectBox.max.z - objectBox.min.z) / 2 - Math.abs(futureCollider.getCenter(new THREE.Vector3()).z - objectBox.getCenter(new THREE.Vector3()).z);
+                const centerPlayer = futureCollider.getCenter(new THREE.Vector3());
+                const centerObject = objectBox.getCenter(new THREE.Vector3());
+                const halfSizePlayer = futureCollider.getSize(new THREE.Vector3()).multiplyScalar(0.5);
+                const halfSizeObject = objectBox.getSize(new THREE.Vector3()).multiplyScalar(0.5);
 
-                 // Find minimum *positive* penetration axis (axis of least overlap)
+                penetration.x = halfSizePlayer.x + halfSizeObject.x - Math.abs(centerPlayer.x - centerObject.x);
+                penetration.y = halfSizePlayer.y + halfSizeObject.y - Math.abs(centerPlayer.y - centerObject.y);
+                penetration.z = halfSizePlayer.z + halfSizeObject.z - Math.abs(centerPlayer.z - centerObject.z);
+
                  let minPen = Infinity;
-                 let axis = -1; // 0=x, 1=y, 2=z
+                 let axis = -1;
 
+                 // Only consider positive penetration values
                  if (penetration.x > 0 && penetration.x < minPen) { minPen = penetration.x; axis = 0; }
                  if (penetration.y > 0 && penetration.y < minPen) { minPen = penetration.y; axis = 1; }
                  if (penetration.z > 0 && penetration.z < minPen) { minPen = penetration.z; axis = 2; }
 
                  // Apply correction based on minimum penetration axis
+                 const signCorrection = new THREE.Vector3();
                  if (axis === 0) { // Correct X
-                     const sign = Math.sign(futureCollider.getCenter(new THREE.Vector3()).x - objectBox.getCenter(new THREE.Vector3()).x);
-                     correctedDelta.x += penetration.x * sign;
-                     this.velocity.x = 0; // Stop velocity on this axis
+                     signCorrection.x = Math.sign(centerPlayer.x - centerObject.x);
+                     correctedDelta.x -= minPen * signCorrection.x; // Push back
+                     this.velocity.x = 0;
                  } else if (axis === 1) { // Correct Y
-                     const sign = Math.sign(futureCollider.getCenter(new THREE.Vector3()).y - objectBox.getCenter(new THREE.Vector3()).y);
-                     correctedDelta.y += penetration.y * sign;
-                      // If hitting ceiling or obstacle vertically, stop velocity
-                     if (sign > 0 && this.velocity.y < 0) this.velocity.y = 0; // Hitting from below
-                     if (sign < 0 && this.velocity.y > 0) this.velocity.y = 0; // Hitting from above (ceiling)
+                     signCorrection.y = Math.sign(centerPlayer.y - centerObject.y);
+                     // Only correct Y if not already grounded, or if hitting from above
+                     if (!grounded || signCorrection.y < 0) {
+                         correctedDelta.y -= minPen * signCorrection.y; // Push back
+                         // Stop Y velocity only if hitting head or pushing down? Be careful here.
+                          if (this.velocity.y > 0 && signCorrection.y < 0) this.velocity.y = 0; // Hitting ceiling
+                          if (this.velocity.y < 0 && signCorrection.y > 0) this.velocity.y = 0; // Hitting obstacle from below (if not ground)
+                     }
                  } else if (axis === 2) { // Correct Z
-                     const sign = Math.sign(futureCollider.getCenter(new THREE.Vector3()).z - objectBox.getCenter(new THREE.Vector3()).z);
-                     correctedDelta.z += penetration.z * sign;
-                     this.velocity.z = 0; // Stop velocity on this axis
+                     signCorrection.z = Math.sign(centerPlayer.z - centerObject.z);
+                     correctedDelta.z -= minPen * signCorrection.z; // Push back
+                     this.velocity.z = 0;
                  }
 
                  // Update future collider based on this correction before checking the next object
@@ -297,27 +354,31 @@ export class Player {
             }
         }
 
-        // Return the possibly adjusted deltaPosition and ground status
         return { correctedDelta, grounded };
     }
 
 
     updateCollider() {
-        // Calculate AABB based on capsule shape (approximate)
-        const halfHeight = Constants.PLAYER_HEIGHT / 2;
+        if (!this.mesh) return; // Safety check
+        // Use capsule geometry parameters if available for better fit, otherwise fallback
+        const radius = this.mesh.geometry?.parameters?.radius ?? Constants.PLAYER_RADIUS;
+        const height = this.mesh.geometry?.parameters?.height ?? (Constants.PLAYER_HEIGHT - 2 * Constants.PLAYER_RADIUS);
+        const capsuleHalfHeight = height / 2;
+        const totalHalfHeight = capsuleHalfHeight + radius; // Center of top/bottom sphere to center of capsule
+
         this.collider.min.set(
-            this.mesh.position.x - Constants.PLAYER_RADIUS,
-            this.mesh.position.y - halfHeight,
-            this.mesh.position.z - Constants.PLAYER_RADIUS
+            this.mesh.position.x - radius,
+            this.mesh.position.y - totalHalfHeight, // Bottom of lower sphere
+            this.mesh.position.z - radius
         );
         this.collider.max.set(
-            this.mesh.position.x + Constants.PLAYER_RADIUS,
-            this.mesh.position.y + halfHeight,
-            this.mesh.position.z + Constants.PLAYER_RADIUS
+            this.mesh.position.x + radius,
+            this.mesh.position.y + totalHalfHeight, // Top of upper sphere
+            this.mesh.position.z + radius
         );
     }
 
     getPosition() {
-        return this.mesh.position;
+        return this.mesh?.position; // Use optional chaining
     }
 }
