@@ -127,23 +127,39 @@ export function findGroundHeight(position, worldObjects) {
     return null; // No ground found below
 }
 
-
 // Helper to update portal BBox
 export function updatePortalBoundingBox(portalMesh) {
     const thickness = 0.6; // Slightly thicker for better collision checks
     if (!portalMesh.userData.boundingBox) portalMesh.userData.boundingBox = new THREE.Box3();
+
+    // 1. Set initial box from object (accounts for current position, rotation, scale)
     portalMesh.userData.boundingBox.setFromObject(portalMesh);
-    // Expand based on portal's orientation - use local axes
-     const worldScale = new THREE.Vector3();
-     portalMesh.getWorldScale(worldScale); // Get world scale
 
-     const localExpand = new THREE.Vector3(thickness / 2 / worldScale.x, 0, thickness / 2 / worldScale.z); // Expand in local X/Z
-     localExpand.applyQuaternion(portalMesh.quaternion); // Rotate expansion vector to world space
+    // 2. Expand slightly for interaction/collision thickness (more robust way)
+    // Create a small box representing the expansion amount
+    const expansion = new THREE.Vector3(thickness / 2, thickness / 2, thickness / 2); // Expand slightly in all directions for safety
+    const expansionBox = new THREE.Box3(expansion.clone().negate(), expansion);
 
-     portalMesh.userData.boundingBox.expandByVector(localExpand.abs()); // Expand by absolute values in world axes
+    // Union the object's box with the small expansion box centered at the object's center
+    const center = new THREE.Vector3();
+    portalMesh.userData.boundingBox.getCenter(center);
+    expansionBox.translate(center); // Move expansion box to object center
+    portalMesh.userData.boundingBox.union(expansionBox); // Expand the main box
 
+    /* // --- OLD/INCORRECT METHOD causing the error ---
+    const worldScale = new THREE.Vector3();
+    portalMesh.getWorldScale(worldScale); // Get world scale
 
-    // portalMesh.userData.boundingBox.expandByVector(new THREE.Vector3(thickness, thickness, thickness)); // Old simpler way
+    const localExpand = new THREE.Vector3(thickness / 2 / worldScale.x, 0, thickness / 2 / worldScale.z); // Expand in local X/Z
+    localExpand.applyQuaternion(portalMesh.quaternion); // Rotate expansion vector to world space
+
+    // Create a new vector with absolute values for expansion
+    // const absExpand = new THREE.Vector3(Math.abs(localExpand.x), Math.abs(localExpand.y), Math.abs(localExpand.z)); // This could work too
+    // portalMesh.userData.boundingBox.expandByVector(absExpand);
+
+    // Incorrect call causing the error:
+    // portalMesh.userData.boundingBox.expandByVector(localExpand.abs());
+    */
 }
 
 // Simple screen shake placeholder
