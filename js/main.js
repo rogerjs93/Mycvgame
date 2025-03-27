@@ -22,6 +22,7 @@ let universeScore = 0;
 let clueScore = 0;
 let collectedClueIndices = []; // Store indices of collected clues
 let currentObjective = null; // Stores the active mini-objective object
+let currentSpawnPoint = new THREE.Vector3(); // --- Store current universe spawn point ---
 
 // --- Initialization ---
 async function init() {
@@ -45,6 +46,14 @@ async function init() {
     // Add player's mesh to world objects if it's used for collision checks BY OTHER entities
     // player.mesh.userData.isPlayerMesh = true; // Add a flag
     // worldObjects.push(player.mesh); // Player collision done internally mostly
+
+    // --- Update Instructions ---
+    const instructionsElement = document.getElementById('instructions');
+    if (instructionsElement && !instructionsElement.textContent.includes('R: Respawn')) { // Avoid adding multiple times
+        instructionsElement.textContent += ', R: Respawn';
+    }
+    // --- End Update Instructions ---
+
 
     // --- Load Assets ---
     await preloadAllAssets(); // Wait for assets
@@ -74,8 +83,6 @@ async function init() {
 
 // --- World Object Management ---
 // worldObjects is cleared and rebuilt by universeManager now.
-// This function might not be needed if universeManager directly modifies the exported array.
-// export function clearWorldObjects() { worldObjects.length = 0; }
 
 // --- Universe Switching ---
 function switchUniverse(type) {
@@ -85,8 +92,12 @@ function switchUniverse(type) {
     // Generate returns necessary parameters and modifies worldObjects array directly
     const { safeSpawnPos, physicsParams, shouldRandomizeControls, currentObjective: newObjective } = generateUniverse(scene, worldObjects, type);
 
-    // Reset player state and position
-    player.reset(safeSpawnPos);
+    // --- STORE SPAWN POINT ---
+    currentSpawnPoint.copy(safeSpawnPos); // Store the safe spawn point for this universe
+    console.log("Stored new spawn point:", currentSpawnPoint.toArray().map(n=>n.toFixed(2)));
+    // ------------------------
+
+    player.reset(safeSpawnPos); // Reset player to the initial point
     player.setPhysicsParams(physicsParams); // Apply biome physics to player
 
     if (type === 'main') {
@@ -95,7 +106,6 @@ function switchUniverse(type) {
         UI.updateClueReviewPanel(getMasterClueList(), collectedClueIndices);
     } else {
         // Increment score only when entering a *new* random one
-        // Check the type argument to decide if it was a switch *to* random
         if (type === 'random') {
              universeScore++;
         }
@@ -125,7 +135,20 @@ function onKeyDown(event) {
     if (document.pointerLockElement !== document.body && event.code !== 'Escape') return;
 
     keysPressed[event.code] = true;
-    player.updateMovementKeys(keysPressed); // Inform player
+    // Don't update player movement keys immediately if respawning
+    // player.updateMovementKeys(keysPressed); // Inform player
+
+    // --- MANUAL RESPAWN ---
+    if (event.code === 'KeyR') {
+        console.log("Manual respawn triggered.");
+        Audio.playRespawnSound(); // Play respawn sound (added in audio.js)
+        player.reset(currentSpawnPoint); // Reset to stored spawn point
+        return; // Stop processing other keys this frame
+    }
+    // --- END RESPAWN ---
+
+    // Update movement keys only if not respawning
+    player.updateMovementKeys(keysPressed);
 
     // Interaction keys
     if (event.code === 'Enter') handleInteraction(getActivePortals(), Constants.PORTAL_INTERACTION_DISTANCE, handlePortalUse);
@@ -173,25 +196,18 @@ function handlePointerLockChange() {
 // --- Interaction Logic ---
 // Generic interaction handler
 function handleInteraction(objects, distance, callback) {
-    // Ensure player and objects are valid before proceeding
     if (!player || !objects || objects.length === 0) return false;
-
     const playerPos = player.getPosition();
-    if (!playerPos) return false; // Player position might not be ready
+    if (!playerPos) return false;
 
-    let closestDistSq = distance * distance; // Use squared distance for efficiency
+    let closestDistSq = distance * distance;
     let targetObject = null;
-    let targetIndex = -1; // Store index if needed for removal
+    let targetIndex = -1;
 
     for (let i = 0; i < objects.length; i++) {
         const obj = objects[i];
-        // Handle cases where obj is data wrapper vs direct mesh
         const mesh = obj.mesh || obj;
-        if (!mesh || !mesh.position || !mesh.parent) {
-            // console.warn("Skipping invalid object in handleInteraction:", obj); // Added warning
-            continue; // Skip invalid/removed objects
-        }
-
+        if (!mesh || !mesh.position || !mesh.parent) continue;
 
         const distSq = playerPos.distanceToSquared(mesh.position);
         if (distSq < closestDistSq) {
@@ -203,117 +219,80 @@ function handleInteraction(objects, distance, callback) {
 
     if (targetObject) {
         try {
-             callback(targetObject, targetIndex); // Pass object and index
-             return true; // Indicate interaction happened
+             callback(targetObject, targetIndex);
+             return true;
         } catch (e) {
             console.error("Error during interaction callback:", e, "Object:", targetObject);
             return false;
         }
     }
-    return false; // No interaction
+    return false;
 }
 
 // Specific interaction callbacks
 function handlePortalUse(portalMesh) {
-    // Ensure userData exists before accessing type
-    if (!portalMesh || !portalMesh.userData) {
-        console.error("Invalid portal mesh data in handlePortalUse");
-        return;
-    }
+    if (!portalMesh || !portalMesh.userData) { console.error("Invalid portal mesh data"); return; }
     const portalType = portalMesh.userData.type;
     Audio.playPortalEnterSound(portalType);
     switchUniverse(portalType);
 }
 
 function handleClueCollect(clueMesh, index) {
-     // Ensure userData exists
-    if (!clueMesh || !clueMesh.userData || clueMesh.userData.originalIndex === undefined) {
-        console.error("Invalid clue mesh data in handleClueCollect");
-        return;
-    }
+    if (!clueMesh || !clueMesh.userData || clueMesh.userData.originalIndex === undefined) { console.error("Invalid clue mesh data"); return; }
     const clueData = clueMesh.userData;
 
-    // Add to collected list *if not already collected*
     if (!collectedClueIndices.includes(clueData.originalIndex)) {
         collectedClueIndices.push(clueData.originalIndex);
         clueScore++;
         UI.updateScoreDisplay(universeScore, clueScore);
-        // Update review panel if we are in the main hub (or defer update)
         if(getCurrentUniverseType() === 'main') {
-             // Ensure list functions are available and valid before calling
              const masterList = getMasterClueList();
-             if (masterList) {
-                 UI.updateClueReviewPanel(masterList, collectedClueIndices);
-             } else {
-                 console.error("Master clue list not available for UI update.");
-             }
+             if (masterList) { UI.updateClueReviewPanel(masterList, collectedClueIndices); }
+             else { console.error("Master clue list not available for UI update."); }
         }
     }
 
     UI.showClueText(clueData.text);
+    if (clueData.isKeyClue) { Audio.playKeyClueSound(); }
+    else { Audio.playClueCollectSound(); }
 
-    if (clueData.isKeyClue) {
-         Audio.playKeyClueSound();
-         // Add extra visual effect?
-    } else {
-         Audio.playClueCollectSound();
-    }
-
-    // Remove from scene and lists - Safely
-    if (clueMesh.parent) { // Check if it's still in the scene
-        scene.remove(clueMesh);
-    }
+    if (clueMesh.parent) { scene.remove(clueMesh); }
     worldObjects = worldObjects.filter(obj => obj !== clueMesh);
-    removeActiveClueMesh(clueMesh); // Tell clue module it's gone
+    removeActiveClueMesh(clueMesh);
 }
 
 function handleNPCHint(npcData) {
-    // Ensure npcData and expected properties exist
-    if (!npcData || !npcData.behavior || !npcData.state) {
-        console.error("Invalid NPC data in handleNPCHint");
-        return false;
-    }
+    if (!npcData || !npcData.behavior || !npcData.state) { console.error("Invalid NPC data"); return false; }
      if (npcData.behavior === 'hint' && npcData.state.hintText) {
-         UI.displayTemporaryMessage(`NPC: "${npcData.state.hintText}"`, 4000); // Show hint longer
-         // Audio.playSound('npc_talk'); // Optional talk sound
-         return true; // Interaction handled
+         UI.displayTemporaryMessage(`NPC: "${npcData.state.hintText}"`, 4000);
+         return true;
      }
-     return false; // Not a hint NPC or no hint text
+     return false;
 }
 
 function handleObjectiveItemInteract(itemMesh, index) {
     if (!currentObjective || !itemMesh || !itemMesh.userData || !itemMesh.userData.isObjectiveItem) return false;
 
-    // Check if item matches current objective type
     if (itemMesh.userData.objectiveType === currentObjective.type) {
         console.log(`Interacted with objective item: ${currentObjective.type}`);
         currentObjective.current++;
         UI.updateObjectiveDisplay(currentObjective);
-        Audio.playSound('collect_clue', 0.6); // Use clue sound for now
+        Audio.playSound('collect_clue', 0.6);
 
-        // Remove item from scene/lists - Safely
-        if (itemMesh.parent) {
-            scene.remove(itemMesh);
-        }
+        if (itemMesh.parent) { scene.remove(itemMesh); }
         worldObjects = worldObjects.filter(obj => obj !== itemMesh);
-        // Remove from objective's item list if needed
         currentObjective.items = currentObjective.items.filter(item => item !== itemMesh);
 
-
-        // Check for objective completion
         if (currentObjective.current >= currentObjective.required) {
             console.log(`Objective complete: ${currentObjective.type}`);
             Audio.playObjectiveCompleteSound();
             UI.displayTemporaryMessage(`Objective Complete: ${currentObjective.text}`, 3000);
-            // Grant reward?
-             // Example: clueScore += 2; player.stabilizeControls();
             clueScore += 1; // Bonus score point
             UI.updateScoreDisplay(universeScore, clueScore);
-
-            currentObjective = null; // Clear completed objective
+            currentObjective = null;
             UI.updateObjectiveDisplay(null);
         }
-        return true; // Interaction handled
+        return true;
     }
     return false;
 }
@@ -321,79 +300,52 @@ function handleObjectiveItemInteract(itemMesh, index) {
 
 // --- Animation Loop ---
 function animate() {
-    // Immediately request the next frame
     requestAnimationFrame(animate);
-
-    // Safely get delta time, ensure clock exists
     let deltaTime = 0;
-    if (clock) {
-        deltaTime = Math.min(clock.getDelta(), 0.05); // Clamp delta time
-    } else {
-        console.error("Clock not initialized!");
-        return; // Stop loop if clock is missing
-    }
+    if (clock) { deltaTime = Math.min(clock.getDelta(), 0.05); }
+    else { console.error("Clock not initialized!"); return; }
 
-
-    // Update game objects only if they exist
     try {
         if (player) {
-            player.update(deltaTime, worldObjects);
+            // Pass spawn point to update function
+            player.update(deltaTime, worldObjects, currentSpawnPoint);
         }
 
-        const activeNPCsData = getActiveNPCsData(); // Function should handle if list is empty
+        const activeNPCsData = getActiveNPCsData();
         if (activeNPCsData && activeNPCsData.length > 0) {
-             updateAllNPCs(deltaTime, worldObjects, player ? player.getPosition() : null); // Pass player pos safely
+             updateAllNPCs(deltaTime, worldObjects, player ? player.getPosition() : null, getCurrentUniverseType() === 'main' ? Constants.MAIN_UNIVERSE_RADIUS : Constants.UNIVERSE_RADIUS); // Pass radius
         }
 
-        const activeClues = getActiveClueMeshes(); // Function should handle if list is empty
+        const activeClues = getActiveClueMeshes();
         if (activeClues && activeClues.length > 0) {
             activeClues.forEach(c => {
-                if (c && c.rotation) { // Check clue object is valid
+                if (c && c.rotation) {
                     c.rotation.y += 0.8 * deltaTime;
-                    // Bobbing effect - needs access to clock elapsed time, or manage time differently
-                    // c.position.y += Math.sin(clock.elapsedTime * 2.0 + c.id) * 0.005;
                 }
             });
         }
 
-        const activePortals = getActivePortals(); // Function should handle if list is empty
+        const activePortals = getActivePortals();
         if (activePortals && activePortals.length > 0) {
             updatePortals(activePortals, deltaTime);
         }
 
-    } catch (error) {
-        console.error("Error during game update loop:", error);
-        // Potentially stop the loop or attempt recovery depending on the error
-        // For now, just log it to avoid crashing the browser entirely on minor update errors
-        // return; // Uncomment to stop loop on error
-    }
+    } catch (error) { console.error("Error during game update loop:", error); }
 
-
-    // Render the scene only if renderer and scene exist
     if (renderer && scene && camera) {
-        try {
-            renderer.render(scene, camera);
-        } catch (renderError) {
-            console.error("Error during rendering:", renderError);
-            // Stop the loop? Disable rendering?
-            // return; // Uncomment to stop loop on render error
-        }
-    } else {
-        console.error("Renderer, Scene, or Camera not initialized for rendering!");
-        // return; // Stop loop if core components are missing
-    }
+        try { renderer.render(scene, camera); }
+        catch (renderError) { console.error("Error during rendering:", renderError); }
+    } else { console.error("Renderer, Scene, or Camera not initialized for rendering!"); }
 }
 
 // --- Start ---
-// Wrap init in a try/catch for better error reporting
 try {
      init().catch(err => {
         console.error("Initialization failed:", err);
-        if(UI) UI.showLoading(false); // Ensure loading is hidden on error
-        // Display error message to user?
+        if(UI) UI.showLoading(false);
         const loadingIndicator = document.getElementById('loadingIndicator');
         if(loadingIndicator) {
-             loadingIndicator.textContent = "Error during initialization. Please check console.";
+             loadingIndicator.textContent = "Error during initialization. Check console.";
              loadingIndicator.style.color = 'red';
         }
     });
@@ -402,7 +354,7 @@ try {
      if(UI) UI.showLoading(false);
      const loadingIndicator = document.getElementById('loadingIndicator');
      if(loadingIndicator) {
-        loadingIndicator.textContent = "Critical error during setup. Please check console.";
+        loadingIndicator.textContent = "Critical error during setup. Check console.";
         loadingIndicator.style.color = 'red';
      }
 }
