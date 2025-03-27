@@ -1,4 +1,3 @@
-      
 import * as THREE from 'three';
 import { getSoundBuffer } from './assetsLoader.js'; // Assuming assetsLoader handles loading
 
@@ -37,7 +36,7 @@ function playProceduralBeep() {
 
 // Play a non-positional sound effect (UI, teleport)
 export function playSound(soundName, volume = 0.5, detune = 0) {
-    if (!audioContext || !audioListener || audioContext.state !== 'running') { // Check context state
+    if (!audioContext || !audioListener || audioContext.state !== 'running') {
          if(audioContext?.state === 'suspended') console.warn(`Cannot play sound '${soundName}', AudioContext suspended (needs user gesture).`);
          else if (!audioContext) console.warn(`Cannot play sound '${soundName}', AudioContext not initialized.`);
          return;
@@ -45,7 +44,7 @@ export function playSound(soundName, volume = 0.5, detune = 0) {
     const buffer = getSoundBuffer(soundName);
     if (!buffer) {
         console.warn(`Sound buffer not found: ${soundName}. Playing fallback beep.`);
-        playProceduralBeep(); // Play fallback beep if buffer missing
+        playProceduralBeep();
         return;
     }
 
@@ -53,14 +52,10 @@ export function playSound(soundName, volume = 0.5, detune = 0) {
         const source = audioContext.createBufferSource();
         source.buffer = buffer;
         source.detune.value = detune;
-
-        // Create a separate gain node for volume control
         const gainNode = audioContext.createGain();
         gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-
         source.connect(gainNode);
-        gainNode.connect(audioListener.gain); // Connect to main listener gain
-
+        gainNode.connect(audioListener.gain);
         source.start(0);
     } catch (e) {
          console.error(`Error playing sound ${soundName}:`, e);
@@ -79,12 +74,8 @@ export function playPositionalSound(soundName, meshToAttach, volume = 1.0, refDi
         sound.setRefDistance(refDistance);
         sound.setRolloffFactor(rolloffFactor);
         sound.setVolume(volume);
-        // sound.setLoop(false);
-
         meshToAttach.add(sound);
         sound.play();
-        // Auto cleanup after sound finishes? THREE.PositionalAudio doesn't have onended directly
-        // May need to manage sources if attaching many sounds.
     } catch (e) {
          console.error(`Error playing positional sound ${soundName}:`, e);
     }
@@ -93,13 +84,22 @@ export function playPositionalSound(soundName, meshToAttach, volume = 1.0, refDi
 
 // Start/Stop Ambient Background Music/Sound
 export function startAmbientSound(soundName) {
-    if (!audioContext || !audioListener) return; // Don't check state here, allow scheduling even if suspended
-    const buffer = getSoundBuffer(soundName);
-    if (!buffer) { console.warn(`Ambient sound buffer not found: ${soundName}`); return; }
-
-    // Stop previous ambient sound if playing
+    // --- ALWAYS STOP PREVIOUS SOUND ---
     if (ambientSound && ambientSound.isPlaying) {
         try { ambientSound.stop(); } catch(e){}
+        console.log("Stopped previous ambient sound.");
+        ambientSound = null; // Clear reference
+    }
+    // --- END STOP ---
+
+    if (!audioContext || !audioListener) {
+        console.warn(`Cannot start ambient sound '${soundName}', audio system not ready.`);
+        return;
+    }
+    const buffer = getSoundBuffer(soundName);
+    if (!buffer) {
+        console.warn(`Ambient sound buffer not found: ${soundName}`);
+        return; // Don't try to play if buffer missing
     }
 
     try {
@@ -107,7 +107,8 @@ export function startAmbientSound(soundName) {
         ambientSound.setBuffer(buffer);
         ambientSound.setLoop(true);
         ambientSound.setVolume(0.3);
-        ambientSound.play(); // This might trigger the warning if context is suspended
+        // Play might still trigger warning if context is suspended, but will play on resume
+        ambientSound.play();
         console.log(`Started ambient sound: ${soundName}`);
     } catch (e) {
          console.error(`Error starting ambient sound ${soundName}:`, e);
@@ -115,12 +116,12 @@ export function startAmbientSound(soundName) {
     }
 }
 
-export function stopAmbientSound() {
+export function stopAmbientSound() { // Kept for explicit stopping if needed elsewhere
      if (ambientSound && ambientSound.isPlaying) {
         try {
             ambientSound.stop();
             ambientSound = null;
-            console.log("Stopped ambient sound.");
+            console.log("Stopped ambient sound explicitly.");
         } catch(e){
             console.error("Error stopping ambient sound:", e);
         }
@@ -151,14 +152,7 @@ export function playPortalEnterSound(type = 'random') { playSound(type === 'main
 export function playErrorSound() { playSound('error', 0.4); }
 export function playObjectiveCompleteSound() { playSound('objective_complete', 0.8); }
 export function playRespawnSound() {
-    // Try loading buffer first
     const buffer = getSoundBuffer('respawn');
-    if (buffer && audioContext && audioListener) {
-        playSound('respawn', 0.7); // Use loaded sound if available
-    } else {
-        playProceduralRespawn(); // Fallback
-    }
+    if (buffer && audioContext && audioListener) { playSound('respawn', 0.7); }
+    else { playProceduralRespawn(); }
 }
-// ... add more specific wrappers ...
-
-    
