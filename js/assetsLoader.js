@@ -1,4 +1,3 @@
-      
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // import { FontLoader } from 'three/addons/loaders/FontLoader.js';
@@ -42,9 +41,11 @@ const assetsToLoad = [
     { type: 'sound', name: 'ambient_main', path: Constants.SOUND_PATH + 'ambient_main.mp3' },
     { type: 'sound', name: 'ambient_crystal', path: Constants.SOUND_PATH + 'ambient_crystal.mp3' },
     { type: 'sound', name: 'ambient_volcanic', path: Constants.SOUND_PATH + 'ambient_volcanic.mp3' },
-    { type: 'sound', name: 'ambient_windy', path: Constants.SOUND_PATH + 'ambient_windy.mp3' }, // Added from biomes
-    { type: 'sound', name: 'ambient_techno', path: Constants.SOUND_PATH + 'ambient_techno.mp3' }, // Added from biomes
-    { type: 'sound', name: 'ambient_random_default', path: Constants.SOUND_PATH + 'ambient_random_default.mp3' }, // Added from biomes
+    // --- ADDED MISSING AMBIENT SOUNDS ---
+    { type: 'sound', name: 'ambient_windy', path: Constants.SOUND_PATH + 'ambient_windy.mp3' },
+    { type: 'sound', name: 'ambient_techno', path: Constants.SOUND_PATH + 'ambient_techno.mp3' },
+    { type: 'sound', name: 'ambient_random_default', path: Constants.SOUND_PATH + 'ambient_random_default.mp3' },
+    // --- END ADDED SOUNDS ---
 ];
 
 export async function preloadAllAssets() {
@@ -61,7 +62,7 @@ export async function preloadAllAssets() {
                              texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
                         }
                         loadedAssets.textures[assetInfo.name] = texture;
-                        console.log(`Loaded texture: ${assetInfo.name}`);
+                        // console.log(`Loaded texture: ${assetInfo.name}`); // Reduce console spam
                     });
                 case 'model':
                      return gltfLoader.loadAsync(assetInfo.path).then(gltf => {
@@ -71,7 +72,7 @@ export async function preloadAllAssets() {
                 case 'sound':
                      return audioLoader.loadAsync(assetInfo.path).then(buffer => {
                         loadedAssets.sounds[assetInfo.name] = buffer;
-                        console.log(`Loaded sound: ${assetInfo.name}`);
+                        // console.log(`Loaded sound: ${assetInfo.name}`); // Reduce console spam
                     });
                 default:
                     console.warn(`Unknown asset type: ${assetInfo.type}`);
@@ -82,16 +83,13 @@ export async function preloadAllAssets() {
         // Add catch block to each individual promise
         return loadPromise.catch(err => {
              console.error(`Failed to load ${assetInfo.type} ${assetInfo.name}:`, err);
-             // Don't reject Promise.all, just log the error for the specific asset
-             // You might want to set a flag or default asset here if loading is critical
         });
     });
 
     try {
-        await Promise.all(promises); // Wait for all loading attempts
-        console.log("All asset loading attempts finished."); // Changed message slightly
+        await Promise.all(promises);
+        console.log("All asset loading attempts finished.");
     } catch (error) {
-        // This catch block might not be reached if individual promises handle their errors
         console.error("Unexpected error during Promise.all for asset loading:", error);
     } finally {
         showLoading(false);
@@ -103,8 +101,7 @@ export function getAsset(type, name) {
     if (loadedAssets[type] && loadedAssets[type][name]) {
         return loadedAssets[type][name];
     } else {
-        // Don't warn here if asset load failed, warning was already logged during load attempt
-        // console.warn(`Asset not found or failed to load: type=${type}, name=${name}`);
+        // Warning logged during load attempt if failed
         return null;
     }
 }
@@ -113,6 +110,3 @@ export function getAsset(type, name) {
 export function getTexture(name) { return getAsset('textures', name); }
 export function getModel(name) { return getAsset('models', name); }
 export function getSoundBuffer(name) { return getAsset('sounds', name); }
-// export function getFont(name) { return getAsset('fonts', name); }
-
-    
