@@ -1,12 +1,13 @@
+      
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-// import { FontLoader } from 'three/addons/loaders/FontLoader.js'; // If loading fonts for 3D text
-import { showLoading } from './ui.js'; // Assuming ui.js handles the loading indicator
+// import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { showLoading } from './ui.js';
 import * as Constants from './constants.js';
 
 const textureLoader = new THREE.TextureLoader();
 const gltfLoader = new GLTFLoader();
-const audioLoader = new THREE.AudioLoader(); // Requires listener attached to camera
+const audioLoader = new THREE.AudioLoader();
 // const fontLoader = new FontLoader();
 
 const loadedAssets = {
@@ -16,29 +17,34 @@ const loadedAssets = {
     fonts: {}
 };
 
-// List of assets to preload - adjust paths and types as needed
+// List of assets to preload
 const assetsToLoad = [
     // Textures
     { type: 'texture', name: 'tardis_floor', path: Constants.TEXTURE_PATH + 'tardis_floor.jpg' },
     { type: 'texture', name: 'cave_floor', path: Constants.TEXTURE_PATH + 'cave_floor.png' },
     { type: 'texture', name: 'volcanic_ground', path: Constants.TEXTURE_PATH + 'volcanic_ground.jpg' },
-    { type: 'texture', name: 'grid_lines', path: Constants.TEXTURE_PATH + 'grid_lines.png' }, // Example
-    { type: 'texture', name: 'grass_moss', path: Constants.TEXTURE_PATH + 'grass_moss.png' }, // Example
+    { type: 'texture', name: 'grid_lines', path: Constants.TEXTURE_PATH + 'grid_lines.png' },
+    { type: 'texture', name: 'grass_moss', path: Constants.TEXTURE_PATH + 'grass_moss.png' },
 
-    // Models (use simple placeholders if no models yet)
-       { type: 'model', name: 'console', path: Constants.MODEL_PATH + 'console.glb' },
+    // Models
+    { type: 'model', name: 'console', path: Constants.MODEL_PATH + 'console.glb' },
     // { type: 'model', name: 'crystal_large', path: Constants.MODEL_PATH + 'crystal_large.glb' },
 
-    // Sounds (will be loaded as AudioBuffers)
-    { type: 'sound', name: 'teleport_random', path: Constants.SOUND_PATH + 'teleport_random.wav' },
+    // Sounds
+    { type: 'sound', name: 'teleport_random', path: Constants.SOUND_PATH + 'teleport_random.wav' }, // Corrected extension
     { type: 'sound', name: 'teleport_main', path: Constants.SOUND_PATH + 'teleport_main.wav' },
     { type: 'sound', name: 'collect_clue', path: Constants.SOUND_PATH + 'collect_clue.wav' },
     { type: 'sound', name: 'jump', path: Constants.SOUND_PATH + 'jump.wav' },
     { type: 'sound', name: 'land', path: Constants.SOUND_PATH + 'land.wav' },
+    { type: 'sound', name: 'error', path: Constants.SOUND_PATH + 'error.wav' },
+    { type: 'sound', name: 'objective_complete', path: Constants.SOUND_PATH + 'objective_complete.wav' },
+    { type: 'sound', name: 'respawn', path: Constants.SOUND_PATH + 'respawn.wav' }, // Added respawn sound
     { type: 'sound', name: 'ambient_main', path: Constants.SOUND_PATH + 'ambient_main.mp3' },
     { type: 'sound', name: 'ambient_crystal', path: Constants.SOUND_PATH + 'ambient_crystal.mp3' },
     { type: 'sound', name: 'ambient_volcanic', path: Constants.SOUND_PATH + 'ambient_volcanic.mp3' },
-    // ... other ambient sounds ...
+    { type: 'sound', name: 'ambient_windy', path: Constants.SOUND_PATH + 'ambient_windy.mp3' }, // Added from biomes
+    { type: 'sound', name: 'ambient_techno', path: Constants.SOUND_PATH + 'ambient_techno.mp3' }, // Added from biomes
+    { type: 'sound', name: 'ambient_random_default', path: Constants.SOUND_PATH + 'ambient_random_default.mp3' }, // Added from biomes
 ];
 
 export async function preloadAllAssets() {
@@ -46,45 +52,47 @@ export async function preloadAllAssets() {
     console.log("Starting asset preloading...");
 
     const promises = assetsToLoad.map(assetInfo => {
-        switch (assetInfo.type) {
-            case 'texture':
-                return textureLoader.loadAsync(assetInfo.path).then(texture => {
-                    // Apply texture settings if needed (wrapping, encoding)
-                    texture.encoding = THREE.sRGBEncoding; // Correct color space
-                    if(assetInfo.name.includes('floor') || assetInfo.name.includes('ground')) {
-                         texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-                         // texture.repeat.set(4, 4); // Example repeat
-                    }
-                    loadedAssets.textures[assetInfo.name] = texture;
-                    console.log(`Loaded texture: ${assetInfo.name}`);
-                }).catch(err => console.error(`Failed to load texture ${assetInfo.name}:`, err));
-            case 'model':
-                 return gltfLoader.loadAsync(assetInfo.path).then(gltf => {
-                    loadedAssets.models[assetInfo.name] = gltf; // Store the whole GLTF result (scene, animations etc)
-                    console.log(`Loaded model: ${assetInfo.name}`);
-                }).catch(err => console.error(`Failed to load model ${assetInfo.name}:`, err));
-            case 'sound':
-                 return audioLoader.loadAsync(assetInfo.path).then(buffer => {
-                    loadedAssets.sounds[assetInfo.name] = buffer; // Store the AudioBuffer
-                    console.log(`Loaded sound: ${assetInfo.name}`);
-                }).catch(err => console.error(`Failed to load sound ${assetInfo.name}:`, err));
-            // case 'font':
-            //     return fontLoader.loadAsync(assetInfo.path).then(font => {
-            //         loadedAssets.fonts[assetInfo.name] = font;
-            //         console.log(`Loaded font: ${assetInfo.name}`);
-            //     }).catch(err => console.error(`Failed to load font ${assetInfo.name}:`, err));
-            default:
-                console.warn(`Unknown asset type: ${assetInfo.type}`);
-                return Promise.resolve(); // Resolve immediately for unknown types
-        }
+        const loadPromise = (() => { // Wrap loader calls in an immediately invoked function expression
+            switch (assetInfo.type) {
+                case 'texture':
+                    return textureLoader.loadAsync(assetInfo.path).then(texture => {
+                        texture.encoding = THREE.sRGBEncoding;
+                        if(assetInfo.name.includes('floor') || assetInfo.name.includes('ground')) {
+                             texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                        }
+                        loadedAssets.textures[assetInfo.name] = texture;
+                        console.log(`Loaded texture: ${assetInfo.name}`);
+                    });
+                case 'model':
+                     return gltfLoader.loadAsync(assetInfo.path).then(gltf => {
+                        loadedAssets.models[assetInfo.name] = gltf;
+                        console.log(`Loaded model: ${assetInfo.name}`);
+                    });
+                case 'sound':
+                     return audioLoader.loadAsync(assetInfo.path).then(buffer => {
+                        loadedAssets.sounds[assetInfo.name] = buffer;
+                        console.log(`Loaded sound: ${assetInfo.name}`);
+                    });
+                default:
+                    console.warn(`Unknown asset type: ${assetInfo.type}`);
+                    return Promise.resolve(); // Resolve immediately for unknown types
+            }
+        })(); // Immediately invoke the function
+
+        // Add catch block to each individual promise
+        return loadPromise.catch(err => {
+             console.error(`Failed to load ${assetInfo.type} ${assetInfo.name}:`, err);
+             // Don't reject Promise.all, just log the error for the specific asset
+             // You might want to set a flag or default asset here if loading is critical
+        });
     });
 
     try {
-        await Promise.all(promises);
-        console.log("All assets preloaded successfully.");
+        await Promise.all(promises); // Wait for all loading attempts
+        console.log("All asset loading attempts finished."); // Changed message slightly
     } catch (error) {
-        console.error("Error during asset preloading:", error);
-        // Handle failed loading - maybe show an error message
+        // This catch block might not be reached if individual promises handle their errors
+        console.error("Unexpected error during Promise.all for asset loading:", error);
     } finally {
         showLoading(false);
     }
@@ -95,13 +103,16 @@ export function getAsset(type, name) {
     if (loadedAssets[type] && loadedAssets[type][name]) {
         return loadedAssets[type][name];
     } else {
-        console.warn(`Asset not found: type=${type}, name=${name}`);
+        // Don't warn here if asset load failed, warning was already logged during load attempt
+        // console.warn(`Asset not found or failed to load: type=${type}, name=${name}`);
         return null;
     }
 }
 
-// Specific getters for convenience
+// Specific getters
 export function getTexture(name) { return getAsset('textures', name); }
 export function getModel(name) { return getAsset('models', name); }
 export function getSoundBuffer(name) { return getAsset('sounds', name); }
 // export function getFont(name) { return getAsset('fonts', name); }
+
+    
