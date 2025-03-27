@@ -1,8 +1,6 @@
 import * as THREE from 'three';
-import { placeObjectRandomly, isSpawnAreaClear, findGroundHeight } from './utils.js'; // Assuming findGroundHeight exists if needed
+import { placeObjectRandomly, isSpawnAreaClear, findGroundHeight } from './utils.js';
 import * as Constants from './constants.js';
-// Import Audio if NPCs make sounds
-// import * as Audio from './audio.js';
 
 let activeNPCs = []; // List of NPC objects { mesh, behavior, state, ... }
 
@@ -10,19 +8,18 @@ let activeNPCs = []; // List of NPC objects { mesh, behavior, state, ... }
 function createNPCMesh(size, biomeType = 'DEFAULT') {
     let npcGeo;
     const type = Math.random();
-    // Add more varied geometry based on biome or type later
     if (type < 0.33) npcGeo = new THREE.BoxGeometry(size, size, size);
     else if (type < 0.66) npcGeo = new THREE.SphereGeometry(size * 0.6, 16, 8);
     else npcGeo = new THREE.ConeGeometry(size * 0.5, size, 8);
 
     const npcMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5), // Random hue
+        color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
         roughness: Math.random() * 0.5 + 0.3,
         metalness: Math.random() * 0.2,
     });
     const npcMesh = new THREE.Mesh(npcGeo, npcMat);
     npcMesh.castShadow = true;
-    npcMesh.userData.isNPC = true; // Tag for collision/interaction
+    npcMesh.userData.isNPC = true;
     npcMesh.userData.boundingBox = new THREE.Box3().setFromObject(npcMesh);
 
     return npcMesh;
@@ -32,92 +29,91 @@ function createNPCMesh(size, biomeType = 'DEFAULT') {
 export function spawnNPCs(scene, rules, universeRadius, worldObjectsForCheck) {
     activeNPCs = []; // Clear previous NPCs
     const { types = ['wanderer'], maxCount = 3, speedMultiplier = 1.0 } = rules;
-
-    const numToSpawn = Math.min(maxCount, Math.floor(Math.random() * (maxCount + 1))); // 0 to maxCount
+    const numToSpawn = Math.min(maxCount, Math.floor(Math.random() * (maxCount + 1)));
 
     for (let i = 0; i < numToSpawn; i++) {
         const npcSize = THREE.MathUtils.randFloat(0.6, 1.6);
         const npcMesh = createNPCMesh(npcSize);
-
-        const behavior = types[Math.floor(Math.random() * types.length)]; // Pick random allowed behavior
-        const canFly = behavior.includes('_fly'); // Check if behavior implies flying
-
-        const startY = canFly ? THREE.MathUtils.randFloat(npcSize * 2, 8.0) : npcSize / 2; // Flying NPCs start higher
+        const behavior = types[Math.floor(Math.random() * types.length)];
+        const canFly = behavior.includes('_fly');
+        const startY = canFly ? THREE.MathUtils.randFloat(npcSize * 2, 8.0) : npcSize / 2;
         const placementRadius = universeRadius * 0.8;
 
-        // Place randomly, checking clearance
-        placeObjectRandomly(npcMesh, startY, placementRadius, worldObjectsForCheck, 1.5); // Use larger clearance for NPCs
+        placeObjectRandomly(npcMesh, startY, placementRadius, worldObjectsForCheck, 1.5);
 
         const npcData = {
             mesh: npcMesh,
             behavior: behavior,
-            state: { // Behavior-specific state
+            state: {
                 targetPosition: new THREE.Vector3(),
                 isWaiting: false,
                 waitTimer: 0,
-                patrolIndex: 0, // For guards
-                hintText: "...", // For hint givers
-                hazardCooldown: 0, // For hazard droppers
+                patrolIndex: 0,
+                hintText: "...",
+                hazardCooldown: 0,
                 stuckTimer: 0, // --- NEW: Timer to check if stuck ---
                 lastPosition: npcMesh.position.clone(), // --- NEW: Track last position ---
             },
             velocity: new THREE.Vector3(),
-            speed: Constants.PLAYER_BASE_SPEED * 0.5 * speedMultiplier * THREE.MathUtils.randFloat(0.8, 1.2), // Base speed relative to player
+            speed: Constants.PLAYER_BASE_SPEED * 0.5 * speedMultiplier * THREE.MathUtils.randFloat(0.8, 1.2),
             canFly: canFly,
-            gravity: Constants.BASE_GRAVITY * (canFly ? 0 : 0.8), // No or reduced gravity for flyers/specific NPCs
+            gravity: Constants.BASE_GRAVITY * (canFly ? 0 : 0.8),
             onGround: !canFly,
         };
 
-        // Initialize behavior-specific state
         if (behavior === 'hint') {
-            npcData.speed = 0; // Hint givers don't move
-            npcData.state.hintText = getRandomHint(); // Get a random hint
+            npcData.speed = 0;
+            npcData.state.hintText = getRandomHint();
         } else {
-            setNewNPCTarget(npcData, universeRadius); // Set initial target for moving NPCs
+            setNewNPCTarget(npcData, universeRadius);
         }
 
         scene.add(npcMesh);
         activeNPCs.push(npcData);
-        // Add to external world objects list for collision
         worldObjectsForCheck.push(npcMesh);
     }
     console.log(`Spawned ${activeNPCs.length} NPCs.`);
-    return activeNPCs; // Return the list of NPC data objects
+    return activeNPCs;
 }
 
 // Update all active NPCs
-export function updateAllNPCs(deltaTime, worldObjects, playerPosition, universeRadius) { // Added universeRadius
+export function updateAllNPCs(deltaTime, worldObjects, playerPosition, universeRadius) {
     activeNPCs.forEach(npc => {
-        updateNPC(npc, deltaTime, worldObjects, playerPosition, universeRadius); // Pass radius
+        updateNPC(npc, deltaTime, worldObjects, playerPosition, universeRadius);
     });
 }
 
 // Update logic for a single NPC
 function updateNPC(npc, deltaTime, worldObjects, playerPosition, universeRadius) {
     const { mesh, behavior, state, velocity, speed, canFly, gravity } = npc;
-    const STUCK_THRESHOLD = 0.01; // Min distance moved to be considered not stuck
-    const STUCK_TIME_LIMIT = 3.0; // Seconds before trying to get unstuck
+    const STUCK_THRESHOLD_SQ = 0.001; // Min distance moved SQUARED
+    const STUCK_TIME_LIMIT = 3.0;
 
     // --- Check if Stuck ---
-    if (!state.isWaiting && behavior !== 'hint') {
-        if (mesh.position.distanceToSquared(state.lastPosition) < STUCK_THRESHOLD * STUCK_THRESHOLD) {
+    if (!state.isWaiting && behavior !== 'hint' && deltaTime > 0) { // Only check if supposed to be moving
+        // Calculate distance moved squared since last frame check
+        const distMovedSq = mesh.position.distanceToSquared(state.lastPosition);
+
+        if (distMovedSq < STUCK_THRESHOLD_SQ * (deltaTime/0.016)) { // Scale threshold by delta time?
             state.stuckTimer += deltaTime;
         } else {
-            state.stuckTimer = 0; // Reset timer if moved
+            state.stuckTimer = 0; // Reset timer if moved sufficiently
             state.lastPosition.copy(mesh.position); // Update last known good position
         }
 
         // If stuck for too long, try finding a new target
         if (state.stuckTimer > STUCK_TIME_LIMIT) {
             console.log(`NPC ${mesh.uuid} appears stuck, finding new target.`);
-            setNewNPCTarget(npc, universeRadius); // Get a new direction
-            state.stuckTimer = 0; // Reset timer
-            // Optionally add a small random impulse to help break free?
-            // velocity.x += (Math.random() - 0.5) * 0.5;
-            // velocity.z += (Math.random() - 0.5) * 0.5;
+            setNewNPCTarget(npc, universeRadius);
+            state.stuckTimer = 0;
+            // Give a small random nudge
+            velocity.x += (Math.random() - 0.5) * speed * 0.2;
+            velocity.z += (Math.random() - 0.5) * speed * 0.2;
         }
     } else {
          state.stuckTimer = 0; // Don't check if waiting or static
+         // Update lastPosition even if waiting, to avoid false stuck trigger when starting again
+         if(behavior !== 'hint') state.lastPosition.copy(mesh.position);
     }
 
 
@@ -128,14 +124,13 @@ function updateNPC(npc, deltaTime, worldObjects, playerPosition, universeRadius)
             handleWanderBehavior(npc, deltaTime, universeRadius);
             break;
         case 'guard':
-            // TODO: Implement guard patrol logic
             handleWanderBehavior(npc, deltaTime, universeRadius); // Placeholder
             break;
         case 'hint':
             mesh.rotation.y += 0.1 * deltaTime;
-            velocity.y += gravity * deltaTime; // Apply gravity just in case
+            velocity.y += gravity * deltaTime;
             applyNPCPhysicsAndCollision(npc, deltaTime, worldObjects);
-            return; // No movement target logic needed
+            return;
         case 'hazard_dropper':
             handleWanderBehavior(npc, deltaTime, universeRadius);
             // ... (hazard dropping logic) ...
@@ -150,8 +145,7 @@ function updateNPC(npc, deltaTime, worldObjects, playerPosition, universeRadius)
     applyNPCPhysicsAndCollision(npc, deltaTime, worldObjects);
 
     // --- Update BBox ---
-    // Update only if the mesh actually moved to avoid unnecessary calculations
-    if (mesh.position.distanceToSquared(state.lastPosition) > 0.0001) {
+    if (mesh.position.distanceToSquared(state.lastPosition) > 0.00001) { // Only update if actually moved
         mesh.userData.boundingBox.setFromObject(mesh);
     }
 }
@@ -160,132 +154,109 @@ function updateNPC(npc, deltaTime, worldObjects, playerPosition, universeRadius)
 function handleWanderBehavior(npc, deltaTime, universeRadius) {
     const { mesh, state, velocity, speed, canFly } = npc;
 
-    // Check if waiting
     if (state.isWaiting) {
         state.waitTimer -= deltaTime;
         if (state.waitTimer <= 0) {
             state.isWaiting = false;
-            setNewNPCTarget(npc, universeRadius); // Get new target *after* waiting
-             state.stuckTimer = 0; // Reset stuck timer when starting to move again
-             state.lastPosition.copy(mesh.position); // Update position before moving
+            setNewNPCTarget(npc, universeRadius);
+             state.stuckTimer = 0; // Reset stuck timer
+             state.lastPosition.copy(mesh.position); // Update pos before move
         } else {
-             velocity.x *= 0.9; // Apply friction while waiting
+             velocity.x *= 0.9; // Apply friction
              velocity.z *= 0.9;
-            return; // Don't calculate movement direction while waiting
+            return;
         }
     }
 
-    // Only calculate movement if not waiting
     if (!state.isWaiting) {
         const direction = state.targetPosition.clone().sub(mesh.position);
         const distanceToTargetSq = direction.lengthSq();
 
-        // Close enough to target?
-        if (distanceToTargetSq < 1.5) { // Increased threshold slightly
+        if (distanceToTargetSq < 1.5) {
             state.isWaiting = true;
-            state.waitTimer = THREE.MathUtils.randFloat(1.5, 5.0); // Wait a bit longer sometimes
-            // Don't zero velocity immediately, let friction handle it or collision
+            state.waitTimer = THREE.MathUtils.randFloat(1.5, 5.0);
         } else {
-            // Move towards target
             direction.normalize();
-            // Simple acceleration towards target velocity
             const targetVelX = direction.x * speed;
             const targetVelZ = direction.z * speed;
-            velocity.x += (targetVelX - velocity.x) * 0.1; // Approach target velocity
+            velocity.x += (targetVelX - velocity.x) * 0.1;
             velocity.z += (targetVelZ - velocity.z) * 0.1;
-
             if (canFly) {
-                const targetVelY = direction.y * speed * 0.5; // Slower vertical
-                velocity.y += (targetVelY - velocity.y) * 0.05; // Slower vertical approach
+                const targetVelY = direction.y * speed * 0.5;
+                velocity.y += (targetVelY - velocity.y) * 0.05;
             }
         }
     }
 }
 
 function applyNPCPhysicsAndCollision(npc, deltaTime, worldObjects) {
-    const { mesh, velocity, canFly, state } = npc; // Added state
-    if (deltaTime <= 0) return; // Skip if no time passed
+    const { mesh, velocity, canFly, state } = npc;
+    if (deltaTime <= 0) return;
 
     const deltaPos = velocity.clone().multiplyScalar(deltaTime);
-    // Avoid micro-movements if velocity is tiny
     if (deltaPos.lengthSq() < 0.00001) return;
 
     const potentialPos = mesh.position.clone().add(deltaPos);
-    let correctedDelta = deltaPos.clone(); // Start with intended delta
-
+    let correctedDelta = deltaPos.clone();
     let npcOnGround = false;
 
-    // 1. Ground Collision (if not flying)
+    // 1. Ground Collision
     if (!canFly) {
         const npcHeight = mesh.geometry?.parameters?.height || (mesh.geometry?.parameters?.radius * 1.2) || 0.5;
         const npcBottomY = potentialPos.y - npcHeight / 2;
-        const groundY = 0; // TODO: findGroundHeight if ground isn't flat
+        const groundY = 0; // TODO: findGroundHeight if needed
 
         if (npcBottomY <= groundY && velocity.y <= 0) {
             const correctionY = groundY - npcBottomY;
-            potentialPos.y += correctionY; // Correct position
-            correctedDelta.y += correctionY; // Correct delta for collider update
+            potentialPos.y += correctionY;
+            correctedDelta.y += correctionY;
             velocity.y = 0;
             npcOnGround = true;
             npc.onGround = true;
-        } else {
-             npc.onGround = false;
-        }
+        } else { npc.onGround = false; }
     }
 
-    // 2. Boundary Collision (Circular) - Now just nudge back slightly
+    // 2. Boundary Collision
     const maxDist = Constants.UNIVERSE_RADIUS * 0.95;
     const distSq = potentialPos.x * potentialPos.x + potentialPos.z * potentialPos.z;
     if (distSq > maxDist * maxDist) {
         const outwardDir = new THREE.Vector3(potentialPos.x, 0, potentialPos.z).normalize();
-        const pushBack = outwardDir.multiplyScalar((Math.sqrt(distSq) - maxDist) * 1.1); // Push back slightly more than needed
+        const pushBack = outwardDir.multiplyScalar((Math.sqrt(distSq) - maxDist) * 1.1);
         potentialPos.sub(pushBack);
-        correctedDelta.sub(pushBack); // Adjust delta as well
-        // Dampen velocity component moving outwards
+        correctedDelta.sub(pushBack);
         const outwardSpeed = velocity.dot(outwardDir);
-        if(outwardSpeed > 0) {
-             velocity.sub(outwardDir.multiplyScalar(outwardSpeed));
-        }
-         state.stuckTimer += 0.1; // Consider boundary hit as potential stuck indicator
+        if(outwardSpeed > 0) { velocity.sub(outwardDir.multiplyScalar(outwardSpeed)); }
+         state.stuckTimer += 0.1;
     }
 
-    // 3. NPC vs World Objects (Scenery, Portals - Slightly improved response)
+    // --- 3. NPC vs World Objects (SIMPLIFIED) ---
+    // Disable NPC vs NPC collision for performance. Only check scenery/portals.
     const npcColliderFuture = mesh.userData.boundingBox.clone().translate(correctedDelta);
     let collisionDetected = false;
     for (const obj of worldObjects) {
-        if (obj === mesh || obj.userData.isGround || obj.userData.isPlayer || !obj.userData.boundingBox) continue;
+        // Skip self, ground, player, other NPCs, or objects without bbox
+        if (obj === mesh || obj.userData.isGround || obj.userData.isPlayer || obj.userData.isNPC || !obj.userData.boundingBox) continue;
 
         if (npcColliderFuture.intersectsBox(obj.userData.boundingBox)) {
              collisionDetected = true;
-             // More robust collision needed for sliding. Basic stop/deflect:
-             const collisionNormal = mesh.position.clone().sub(obj.position).normalize(); // Approx normal from object center to NPC center
-             collisionNormal.y = 0; // Primarily horizontal correction for wanderers
-             collisionNormal.normalize();
+             // Simplest response: Stop horizontal movement for this frame
+             velocity.x = 0;
+             velocity.z = 0;
+             correctedDelta.x = 0;
+             correctedDelta.z = 0;
+             state.stuckTimer += 0.2; // Increase stuck timer more significantly on collision
 
-             // Deflect velocity slightly away from collision normal
-             const speedAlongNormal = velocity.dot(collisionNormal);
-             if (speedAlongNormal < 0) { // Moving towards the object
-                  velocity.sub(collisionNormal.multiplyScalar(speedAlongNormal * 1.1)); // Remove component moving towards obstacle + a bit extra
-             }
+             // Alternative: Try a small random turn?
+             // const turnAngle = (Math.random() - 0.5) * Math.PI / 2; // Turn up to 90 degrees
+             // velocity.applyAxisAngle(new THREE.Vector3(0, 1, 0), turnAngle);
 
-             // Try finding a slightly different target might be better than velocity deflection alone
-              state.stuckTimer += 0.1; // Increment stuck timer on collision
-
-             // Simple Stop (Fallback if deflection is messy)
-             // velocity.x = 0; velocity.z = 0;
-
-             // Correct delta for this frame to prevent penetration (crude)
-             // Find minimum overlap axis might be better if implementing AABB separation
-             correctedDelta.set(0, correctedDelta.y, 0); // Simplest: just stop horizontal movement this frame
-
-             break; // Handle one collision for now
+             break; // Handle one collision per frame for simplicity
         }
     }
+    // --- END SIMPLIFIED COLLISION ---
 
-
-    // Final position update using the (potentially zeroed) correctedDelta
+    // Final position update using correctedDelta
     mesh.position.add(correctedDelta);
-
 }
 
 
@@ -295,33 +266,23 @@ function setNewNPCTarget(npc, universeRadius) {
     const wanderRadius = universeRadius * (canFly ? 0.9 : 0.8);
     const angle = Math.random() * Math.PI * 2;
     const targetRadius = Math.random() * wanderRadius;
-    const targetY = canFly ? THREE.MathUtils.randFloat(1.0, 10.0) : mesh.position.y; // Use current Y for ground NPCs
+    const targetY = canFly ? THREE.MathUtils.randFloat(1.0, 10.0) : mesh.position.y;
 
     const potentialTarget = new THREE.Vector3(
-         Math.cos(angle) * targetRadius,
-         targetY,
-         Math.sin(angle) * targetRadius
-    );
+         Math.cos(angle) * targetRadius, targetY, Math.sin(angle) * targetRadius );
 
-    // Optional: Add slight bias away from current position to encourage moving
     const dirAway = potentialTarget.clone().sub(mesh.position);
-    if (dirAway.lengthSq() < 4) { // If target is too close, pick another further away
-         const angleAway = Math.atan2(mesh.position.z, mesh.position.x) + Math.PI + (Math.random() - 0.5); // Opposite direction +/- randomness
+    if (dirAway.lengthSq() < 9) { // If target is within 3 units, pick further
+         const angleAway = Math.atan2(mesh.position.z, mesh.position.x) + Math.PI + (Math.random() - 0.5);
          const radiusAway = wanderRadius * THREE.MathUtils.randFloat(0.7, 1.0);
-         potentialTarget.set(
-             Math.cos(angleAway) * radiusAway,
-             targetY,
-             Math.sin(angleAway) * radiusAway
-         );
+         potentialTarget.set( Math.cos(angleAway) * radiusAway, targetY, Math.sin(angleAway) * radiusAway );
     }
 
     state.targetPosition.copy(potentialTarget);
-    state.isWaiting = false; // Ensure not waiting when new target set
-    // console.log(`NPC ${npc.mesh.uuid} new target: ${state.targetPosition.toArray().map(n=>n.toFixed(1))}`);
+    state.isWaiting = false;
 }
 
 function getRandomHint() {
-    // Placeholder hints
     const hints = [ "A path blocked may hide another.", "Look up, look down, look around.", "Some walls are illusions.", "Green leads onward, Red leads back.", "Even static has patterns." ];
     return hints[Math.floor(Math.random() * hints.length)];
 }
