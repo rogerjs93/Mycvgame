@@ -215,7 +215,6 @@ export class Player {
         // Update Ground State & Landing Effects
         if (!this.onGround && grounded) {
              const impactVelocity = V_y_before_collision;
-             // console.log("Landed with velocity:", impactVelocity); // Reduce log spam
              const hardLanding = impactVelocity < Constants.HARD_LANDING_VELOCITY_THRESHOLD;
              Audio.playLandSound(hardLanding);
              if (hardLanding) { triggerScreenShake(0.3, 0.08); }
@@ -230,13 +229,12 @@ export class Player {
 
         // Boundary Collision
         let currentRadius = Constants.UNIVERSE_RADIUS; // Default to random
-        try { // Add try-catch around imported function call
+        try {
             if (getCurrentUniverseType() === 'main') {
                 currentRadius = Constants.MAIN_UNIVERSE_RADIUS;
             }
         } catch (e) {
             console.error("Error calling getCurrentUniverseType in Player.update:", e);
-            // Use default radius if function fails
         }
 
         const maxDist = currentRadius - Constants.PLAYER_RADIUS;
@@ -270,10 +268,11 @@ export class Player {
         // Update collider to potential future position for checking
         const futureCollider = this.collider.clone().translate(deltaPosition);
 
-        // Sort world objects by distance? Might help collision resolution order. (Optional optimization)
-
         for (const obj of worldObjects) {
-            if (obj === this.mesh || !obj.userData.boundingBox || obj.userData.isNonCollidable) continue;
+            // --- NPC COLLISION FIX ---
+            // Skip self, non-collidable, objects without bounding boxes, OR NPCs
+            if (obj === this.mesh || !obj.userData.boundingBox || obj.userData.isNonCollidable || obj.userData.isNPC) continue;
+            // --- END NPC COLLISION FIX ---
 
             const objectBox = obj.userData.boundingBox;
 
@@ -286,19 +285,15 @@ export class Player {
                     const playerBottomFutureY = futureCollider.min.y;
 
                     if (playerBottomFutureY <= groundSurfaceY) {
-                        // Check if it's just a small step up
-                        const groundClearance = groundSurfaceY - this.collider.min.y; // How far is ground below current feet?
-                        if(groundClearance <= stepHeight && groundClearance > -0.1) { // If slightly below or just above step height
-                             // Allow stepping up: Move player vertically to align with ground
+                        const groundClearance = groundSurfaceY - this.collider.min.y;
+                        if(groundClearance <= stepHeight && groundClearance > -0.1) {
                              const stepUpCorrection = groundSurfaceY - this.collider.min.y;
-                              this.mesh.position.y += stepUpCorrection; // Snap player up immediately
-                              correctedDelta.y = 0; // Cancel intended downward delta for this frame
-                              this.velocity.y = 0; // Stop downward velocity
+                              this.mesh.position.y += stepUpCorrection;
+                              correctedDelta.y = 0;
+                              this.velocity.y = 0;
                               grounded = true;
-                              // Update futureCollider's base position after snapping up
-                              futureCollider.copy(this.collider).translate(correctedDelta); // Recalculate based on new base + corrected delta
+                              futureCollider.copy(this.collider).translate(correctedDelta);
                         } else {
-                            // Normal grounding collision
                             const correction = groundSurfaceY - playerBottomFutureY;
                             correctedDelta.y += correction;
                             this.velocity.y = 0;
@@ -306,10 +301,10 @@ export class Player {
                             futureCollider.translate(new THREE.Vector3(0, correction, 0));
                         }
                     }
-                    continue; // Move to next object check after ground handled
+                    continue;
                 }
 
-                // 2. Other Objects (Scenery, NPCs, Portals, Console) - AABB Separation
+                // 2. Other Objects - AABB Separation
                 const penetration = new THREE.Vector3();
                 const centerPlayer = futureCollider.getCenter(new THREE.Vector3());
                 const centerObject = objectBox.getCenter(new THREE.Vector3());
@@ -323,33 +318,28 @@ export class Player {
                  let minPen = Infinity;
                  let axis = -1;
 
-                 // Only consider positive penetration values
                  if (penetration.x > 0 && penetration.x < minPen) { minPen = penetration.x; axis = 0; }
                  if (penetration.y > 0 && penetration.y < minPen) { minPen = penetration.y; axis = 1; }
                  if (penetration.z > 0 && penetration.z < minPen) { minPen = penetration.z; axis = 2; }
 
-                 // Apply correction based on minimum penetration axis
                  const signCorrection = new THREE.Vector3();
                  if (axis === 0) { // Correct X
                      signCorrection.x = Math.sign(centerPlayer.x - centerObject.x);
-                     correctedDelta.x -= minPen * signCorrection.x; // Push back
+                     correctedDelta.x -= minPen * signCorrection.x;
                      this.velocity.x = 0;
                  } else if (axis === 1) { // Correct Y
                      signCorrection.y = Math.sign(centerPlayer.y - centerObject.y);
-                     // Only correct Y if not already grounded, or if hitting from above
                      if (!grounded || signCorrection.y < 0) {
-                         correctedDelta.y -= minPen * signCorrection.y; // Push back
-                         // Stop Y velocity only if hitting head or pushing down? Be careful here.
-                          if (this.velocity.y > 0 && signCorrection.y < 0) this.velocity.y = 0; // Hitting ceiling
-                          if (this.velocity.y < 0 && signCorrection.y > 0) this.velocity.y = 0; // Hitting obstacle from below (if not ground)
+                         correctedDelta.y -= minPen * signCorrection.y;
+                          if (this.velocity.y > 0 && signCorrection.y < 0) this.velocity.y = 0;
+                          if (this.velocity.y < 0 && signCorrection.y > 0) this.velocity.y = 0;
                      }
                  } else if (axis === 2) { // Correct Z
                      signCorrection.z = Math.sign(centerPlayer.z - centerObject.z);
-                     correctedDelta.z -= minPen * signCorrection.z; // Push back
+                     correctedDelta.z -= minPen * signCorrection.z;
                      this.velocity.z = 0;
                  }
 
-                 // Update future collider based on this correction before checking the next object
                  futureCollider.copy(this.collider).translate(correctedDelta);
             }
         }
@@ -359,26 +349,25 @@ export class Player {
 
 
     updateCollider() {
-        if (!this.mesh) return; // Safety check
-        // Use capsule geometry parameters if available for better fit, otherwise fallback
+        if (!this.mesh) return;
         const radius = this.mesh.geometry?.parameters?.radius ?? Constants.PLAYER_RADIUS;
         const height = this.mesh.geometry?.parameters?.height ?? (Constants.PLAYER_HEIGHT - 2 * Constants.PLAYER_RADIUS);
         const capsuleHalfHeight = height / 2;
-        const totalHalfHeight = capsuleHalfHeight + radius; // Center of top/bottom sphere to center of capsule
+        const totalHalfHeight = capsuleHalfHeight + radius;
 
         this.collider.min.set(
             this.mesh.position.x - radius,
-            this.mesh.position.y - totalHalfHeight, // Bottom of lower sphere
+            this.mesh.position.y - totalHalfHeight,
             this.mesh.position.z - radius
         );
         this.collider.max.set(
             this.mesh.position.x + radius,
-            this.mesh.position.y + totalHalfHeight, // Top of upper sphere
+            this.mesh.position.y + totalHalfHeight,
             this.mesh.position.z + radius
         );
     }
 
     getPosition() {
-        return this.mesh?.position; // Use optional chaining
+        return this.mesh?.position;
     }
 }
