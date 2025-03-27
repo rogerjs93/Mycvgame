@@ -5,6 +5,7 @@ export const PLAYER_BASE_SPEED = 5.0;
 export const JUMP_VELOCITY = 8.0;
 export const BASE_GRAVITY = -20.0; // Base gravity, can be modified by biome
 export const DEFAULT_FRICTION = 0.98; // Multiplier for velocity when grounded and not moving
+export const RESPAWN_Y_THRESHOLD = -20.0; // Y level below which player respawns
 
 // Universe
 export const UNIVERSE_RADIUS = 35; // Slightly larger
